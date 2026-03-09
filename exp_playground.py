@@ -1,4 +1,5 @@
 import numpy as np
+from rl_agent import XP_Replay 
 
 class GridWorld:
     """Simple implementation of GridWorld for testing"""
@@ -74,25 +75,6 @@ class GridWorld:
                     row += ". "
             print(row)
         print()
-
-class Model:
-    """MM generator"""
-    def __init__(self, tref=False):
-        self.nodes = set()
-        self.edges = set()
-    
-    def generate(self, data):
-        # extract states
-        current_nodes = set()
-        current_edges = set()
-
-        # extract nodes and edges form current batch
-        for batch in data: 
-            for xp in batch:
-                edge = (xp[0], xp[1])
-                current_nodes.update([edge[0], edge[1]])
-                current_nodes.add(edge)
-        
 
 
 def main():
