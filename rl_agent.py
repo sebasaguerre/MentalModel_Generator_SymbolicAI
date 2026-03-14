@@ -1,10 +1,10 @@
 import numpy as np 
 
-class XP_Replay():
+class XP_Replay:
     def __init__(self, capacity):
         self.capacity = capacity 
         self.memory = []
-        self.rng.default_rng(seed=33)
+        self.rng = np.random.default_rng(seed=33)
 
     def push(self, xp):
         """Add experience to experiecne replay"""
@@ -23,3 +23,14 @@ class XP_Replay():
         sample = np.random.choice(self.memory, size=sample_size, replace=True)
 
         return sample 
+    
+    def __len__(self):
+        return len(self.memory)
+
+class Policy:
+    def __init__(self, Q, state, rand=False):
+        self.Q = Q
+        self.state = state
+
+    def sample_action(self, obs):
+        pass

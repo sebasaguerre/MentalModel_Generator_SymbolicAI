@@ -23,15 +23,17 @@ class ModelStructure:
             
             # labels at future state 
             self.labels.setdefault(next_s, set()).add(f"r_{reward}")
-            self.labels.setdefault(next_s, set()).add(f"ts_{int(done)}")
+            if done:
+                self.labels.setdefault(next_s, set()).add(f"TS")
     
     def visualize(self):
         # create directed graph object 
         dot = Digraph()
 
         # add nodes 
-        for s, props in self.labels.keys():
-            dot.node(str(s), lable)
+        for s, props in self.labels.items():
+            label = f"{s}\n" + "\n".join([str(prop) for prop in props])
+            dot.node(str(s), label= label)
 
         # add edges 
         for s, next_states in self.relations.items():
@@ -43,7 +45,15 @@ class ModelStructure:
             pass
     
         # display graph
-        dot.render(view=True, fromat="png")
+        dot.render(view=True, format="png")
+
+    # abstraction / compression methods
+    def quot_construction(self):
+        # intial grouping
+
+    def bisim_mini(self):
+        pass
+
         
 
 
