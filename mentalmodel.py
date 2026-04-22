@@ -24,13 +24,21 @@ class BiSimulatMini:
     
     def partition0(self):
         """
-        Generaye the entire preimage of the relation function
+        Generate the initial partition
+        NOTE: NOT yet defined, but probably the most logical start is:
+            - Successful terminal states
+            - Failure terminal states
+            - Non terminal states 
         """
+
+        # TODO: implement inital partition
+
+        P = None
 
         # self intial worklist by using all blocks 
         self.worklist += [block for block in self.P]
 
-        pass
+        return P 
 
     def get_preimage(self, S):
         """
@@ -61,18 +69,35 @@ class BiSimulatMini:
 
         # check for block split conditions for each block B in P 
         for B in P:
-            # check if intersection is not empty: True 
-            if B & self.preimageS:
-                if B - self.preimageS:
-                    # generate split blocks
-                    B_in = None
-                    B_out = None
 
-                    # add split blocks to refined partition 
-                    Q.append(B_in)
-                    Q.append(B_out)
-                    
-        pass
+            # if union of B and preimageS and B - preimageS are non empty => split B
+            # that is the elements of B both reach S and do not reach S => B is unstable under S
+            if (B & self.preimageS) and (B - self.preimageS):
+                # generate split blocks
+                B_in = B & self.preimageS # elements of B that reach S
+                B_out = B - self.preimageS # elements of B that do not reach S
+
+                # split blocks to refined partition 
+                Q.append(B_in)
+                Q.append(B_out)
+
+                # update worklist based on `smaller half` rule
+                if B in self.worklist:
+                    # if B on worklist, add both new blocks
+                    self.worklist.append(B_in)
+                    self.worklist.append(B_out)
+                else:
+                    # if B not on worklist, add the smaller block 
+                    # smaller_half = B_in if len(B_in) <= len(B_out) else B_out
+                    smaller_half = min(B_in, B_out, key=len)
+                    self.worklist.append(smaller_half)
+            
+            # B is stable under S
+            else:
+                Q.append(B)
+
+        # partition refinement finalized 
+        return Q
     
     def PTalgorithm(self):
 
@@ -82,9 +107,12 @@ class BiSimulatMini:
 
         # iteratively refine partition via splitting
         while len(self.worklist) != 0:
-            pass
+            # refine partition 
+            P = self.split(S, P) # 
+            # select new splitter
+            S = self.worklist.pop()
 
-        pass
+        return P
 
 
 
