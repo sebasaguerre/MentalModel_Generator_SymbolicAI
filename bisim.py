@@ -111,15 +111,15 @@ class State:
     def __init__(self, id):
         self.id = id
         self.block_q = None   # pointer to Q block 
-        self.preimage = []    # list of Edge records: all xEy for the node y 
+        self.preimage = []    # list of Edge records: all x xEy for the node y 
         self.node = None      # pointer to node in block of q 
 
 class Edge:
-    __slots__ = ["x", "y"]
+    __slots__ = ["source", "count"]
 
-    def __init__(self, x, y):
-        self.source = x
-        self.target = y 
+    def __init__(self, count):
+        self.source = count
+        # self.target = y 
         self.count = None
         # self.label = label    TODO: First without labeld edges then add 
 
@@ -148,23 +148,12 @@ class LargeB:
     def compound(self):
         return self.sub_blocks.size > 1 
     
-class Count:
+class Counter:
     
-    __slots__ = ["state", "block_x"]
+    __slots__ = ["value"]
 
-    def __init__(self, state, block_x):
-        self.state = state
-        self.block_x = block_x
-        self.__count = 1                    # initially 
-    
-    #TODO: implement 
-    @property
-    def count(self):
-        count = 0
-        for e in self.state.preimage:
-            if e.source:
-                pass
-
+    def __init__(self, value):
+        self.value = value               
 
 #####################################################################################################################################
 
@@ -182,25 +171,36 @@ class BiSimulatMini:
     
     def record_builder(self):
 
-        self.records = {"states": {}, "edges": [], "Qblocks": [], "Xblocks": []}
+        self.records = {"states": [], "edges": [], "Qblocks": [], "Xblocks": []}
 
+        # NOTE: # we can make this efficient to recicle states, by checking if the entry exists
         # state to record map:
-        state_to_record = {}
-        
-        # generate records for states
-        for state in self.states:
-            state_record = State(state)
-            self.records["states"].append(state_record)
-            state_to_record[state] = state_record
+        state_to_record = {s: State(s) for s in self.state}
+        self.records["states"] = state_to_record
+
+        # couter map: init count record count(x, U) for edge
+        intcounter_map = {s : Counter(len(self.edges[s])) for s in self.states} 
 
         # generate edge records 
         # iterate over premap
         for target_state, pre_states in self.premap.items():
+            # get target record 
+            target_record = state_to_record[target_state]
+
+            # loop over pre_states
             for source_state in pre_states:
-                #  create edge, store in records dic and add to state preimage
-                edge = Edge(source_state, target_state)
+                # create edge for target_record 
+                source_record = state_to_record[source_state]
+                edge = Edge(source_record)
+
+                # assign initial counter for all edges
+                edge.count = intcounter_map[source_state]
+                
+                # add edge to taget preimage
+                target_record.preimage.append(edge)
+
+                # add edges to record file 
                 self.records["edges"].append(edge)
-                self.records["states"][state_to_record[target_state]].preimage.append(edge)
 
 
     # NOTE: this function might not be useful anymore... premap computed at generation
@@ -338,34 +338,36 @@ class BiSimulatMini:
                     
     def fastsplit(self, S, P):
 
-        # refined partiton
-        Q = set()
+        # # refined partiton
+        # Q = set()
 
-        # get preimage of splitter 
-        self.get_preimage(S)
+        # # get preimage of splitter 
+        # self.get_preimage(S)
 
-        # iterate over blocks in partition 
-        for B in P:
+        # # iterate over blocks in partition 
+        # for B in P:
 
-            # iff condition applies break block
-            if (S & self.preimageS) and (B - self.preimageS):
+        #     # iff condition applies break block
+        #     if (S & self.preimageS) and (B - self.preimageS):
             
-                # create new blocks 
-                B1 = B & self.preimageS
-                B2 = B - B1
+        #         # create new blocks 
+        #         B1 = B & self.preimageS
+        #         B2 = B - B1
 
-                # update partition 
-                Q.update(B1)
-                Q.update(B2)
+        #         # update partition 
+        #         Q.update(B1)
+        #         Q.update(B2)
 
-                # update worklist
+        #         # update worklist
             
-            else:
-                # B is stable with respects to S 
-                Q.update(S)
+        #     else:
+        #         # B is stable with respects to S 
+        #         Q.update(S)
 
         
-        return Q
+        # return Q
+
+        # iterate of DLL of Q 
 
     def fastPTalgo(self):
         """
@@ -378,8 +380,8 @@ class BiSimulatMini:
         self.record_builder()
 
         # this is the "coarse" partition and the compound blocks
-        X = list(self.states)              # starts as the entire set of states 
-        C = list(self.records["states"])   
+        X = list(self.states)                               # starts as the entire set of states 
+        self.worklist = list(self.records["states"])   
 
         # initialize partition
         Q = self.partition0()          # "fine" partition
