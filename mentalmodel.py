@@ -7,7 +7,7 @@ class ModelStructure:
         self.states = set()
         self.relations = dict()
         self.rev_relations = dict() # pre image function for bisimulation
-        self.labels = dict()
+        self.label = dict()
     
     def generate(self, data: list[tuple]):
         
@@ -30,6 +30,7 @@ class ModelStructure:
             self.labels.setdefault(next_s, set()).add(f"r_{reward}")
             if done:
                 self.labels.setdefault(next_s, set()).add(f"TS")
+            
     
     def visualize(self):
         # create directed graph object 
