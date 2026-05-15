@@ -22,7 +22,6 @@ class Node:
         self.parent_dll = new_dll 
         return self.parent_dll.insert(self, node=True)
 
-
 class DLL:
     """
     Double link lists data structure
@@ -480,8 +479,6 @@ class BiSimulatMini:
                     x_count_B[x] = []                 # generate counter 
                 x_count_B[x].append(edge)
                     
-
-    
             node = node.next
 
         # update count record and give x its shortcut 
@@ -496,7 +493,7 @@ class BiSimulatMini:
         # Step 4: refinining Q with respects to B
         Q = self.fastsplit(preB, Q)
 
-        # Step 5: computing E^-1(B) - E^-(S - B)
+        # Step 5: computing E^-1(B) - E^-(S - B)  + Update counters
         purepreB = set()
 
         for x, edges_to_B in x_count_B.items():
@@ -508,15 +505,26 @@ class BiSimulatMini:
             if x.current_count.value == old_count.value:
                 purepreB.add(x)
 
-            # updtae edge count
-            for edge in edges_to_B:
-                # edge now points to count(x,B)
-                edge.count = x.current_count
-
         # Step 6: refine Q with respect to S-B
         Q = self.fastsplit(purepreB, Q)
 
         # Step 7: update counts 
+        for x, edges_to_B in x_count_B.items():
+
+            # this is count(x, B) and count(x, S)
+            xcountB = x.current_count
+            xcountS = edges_to_B[0].couter 
+            
+            # decrease cout(x, S) for all edges xEy st y in B'
+            xcountS.value -= xcountB.value
+
+            # exchange count record if value is zero: cout(x, S) -> count(x, B)
+            if xcountS.value == 0:
+                
+                for edge in edges_to_B:
+                    edge.count = xcountB
+            
+            return X, Q
 
 
     def _fPTalgo(self):
@@ -569,8 +577,8 @@ class BiSimulatMini:
         # iterative partition refinment 
         while self.worklist.size > 0:
             
-            # get splitter
-            self.refinement(X, Q)
+            # refine the set 
+            X, Q = self.refinement(X, Q)
 
         return Q
     
