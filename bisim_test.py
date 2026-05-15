@@ -80,12 +80,5 @@ def run_reduction_test():
         import traceback
         traceback.print_exc()
 
-def main():
-    
-    # initialize bisimulation and mock model 
-    mock_model = MockModel()
-    bisim_mini = BiSimulatMini(mock_model)
-
-
 if __name__ == "__main__":
-    main()
+   run_reduction_test()

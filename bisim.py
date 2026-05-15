@@ -87,8 +87,8 @@ class DLL:
         # delete reference to element and reduce size counter 
         node.next = None
         node.prev = None
+        node.parent_dll = None
         self.size -= 1
-
 
     def pop(self):
 
@@ -116,14 +116,14 @@ class DLL:
         return None 
 
 class State:
-    __slots__ = ["id", "block_q", "preimage", "position_q"] # memeory efficiency
+    __slots__ = ["id", "block_q", "preimage", "node", "current_count"] # memeory efficiency
 
     def __init__(self, id):
         self.id = id
-        self.block_q = None   # pointer to Q block 
-        self.preimage = []    # list of Edge records: all x xEy for the node y 
-        self.node = None      # pointer to node in block of q 
-        self.current_count = None
+        self.block_q = None            # pointer to Q block 
+        self.preimage = []             # list of Edge records: all x xEy for the node y 
+        self.node = None               # pointer to node in block of q 
+        self.current_count = None      # temporary counter we use for refinment
 
 class Edge:
     __slots__ = ["source", "count"]
@@ -155,7 +155,7 @@ class LargeB:
 
     def __init__(self):
         self.sub_blocks = DLL()   # This sub blocks are blocks of Q
-        self.in_c = None  
+        self.in_c = False  
     
     @property
     def compound(self):
@@ -188,7 +188,7 @@ class BiSimulatMini:
 
         # NOTE: # we can make this efficient to recicle states, by checking if the entry exists
         # state to record map:
-        state_to_record = {s: State(s) for s in self.state}
+        state_to_record = {s: State(s) for s in self.states}
         self.records["states"] = state_to_record
 
         # couter map: init count record count(x, U) for edge
@@ -265,16 +265,16 @@ class BiSimulatMini:
         X = DLL()
         X_block = LargeB()            # universe block
         
-        Q_block = Q.head
+        Q_node = Q.head
         # iterate through initial partition block of Q and add them to the Xblock
-        while Q_block is not None:
-            X_block.sub_blocks.insert(Q_block)
+        while Q_node is not None:
+            Q_block = Q_node.data
+            Q_block.node_x = X_block.sub_blocks.insert(Q_block)
             # point Qblock to parent block and add node 
             Q_block.block_x = X_block
-            Q_block.node_x = X_block.sub_blocks.head   # insert = prepend 
             
             # get next block 
-            Q_block = Q_block.next
+            Q_node = Q_node.next
         
         # add Xblock to X
         X.insert(X_block)
@@ -295,8 +295,8 @@ class BiSimulatMini:
     def split(self, S, P):
         """
         Refinement of P obtained by replacing each block B in P st
-        B \/ E^-1(S) != {}  and B - E^-1(S) != {}, with:
-        B' = B /\ E^-1(S) and B'' = B - E^-1(S).
+        B union E^-1(S) != {}  and B - E^-1(S) != {}, with:
+        B' = B intersect E^-1(S) and B'' = B - E^-1(S).
 
         S is the `splitter` of P if split(S, P) != P; making Q unstable 
         with respects to S
@@ -404,18 +404,18 @@ class BiSimulatMini:
                 Dprime = associated[D]
             else:
                 # create D prime and update data structure 
-                Dprime = SmallB()                                 # D' = X^-1(B) intersect  D 
+                Dprime = SmallB()                                 # D' = E^-1(B) intersect D 
                 Dprime.block_x = D.block_x
                 Dprime.node_x = D.block_x.sub_blocks.insert(Dprime)
                 Dprime.node = Q.insert(Dprime)
 
-                # add D to splited blocks
+                # add D to splited blocks and associated 
                 splited_blocks.add(D)
+                associated[D] = Dprime
 
-            # move node
-            x.node = x.node.move_node(Dprime)
+            # move node: D -> D'
+            x.node = x.node.move_node(Dprime.elements)
             x.block_q = Dprime
-
 
         # cleaning blocks after split 
         for D in splited_blocks:
@@ -424,6 +424,8 @@ class BiSimulatMini:
             if D.size == 0:
                 # remove  from Q partition
                 Q.remove(D.node)
+                D.node = None 
+                
                 # remove form parent node in X partition
                 D.block_x.sub_blocks.remove(D.node_x)
             
@@ -438,19 +440,19 @@ class BiSimulatMini:
 
         # Step 1: selecting refinment block
         # get splitter and examin first two subblocks
-        S = self.worklist.pop()
+        S = self.worklist.pop().data
         S.in_c = False
-        B1 = S.sub_blocks.head
-        B2 = S.sub_blocks.head.next 
+        B1 = S.sub_blocks.head.data
+        B2 = S.sub_blocks.head.next.data
 
         # select the smaller one 
         B = B1 if B1.size <= B2.size else B2 
 
         # Step 2: update X 
         S.sub_blocks.remove(B.node_x)                 
-        Sprime = LargeB()                 # create new block of X which is simple 
-        Sprime.sub_blocks.insert(B)       # insert B into S'
-        X.insert(Sprime)                  # insert S' into X
+        Sprime = LargeB()                            # create new block of X which is simple 
+        B.node_x = Sprime.sub_blocks.insert(B)       # insert B into S'
+        X.insert(Sprime)                             # insert S' into X
 
         # put S back into worklist if compund 
         if S.compound:
@@ -485,10 +487,6 @@ class BiSimulatMini:
         for x, edge_list in x_count_B.items():
             count = Counter(len(edge_list))
             x.current_count = count
-
-            # # update edge counters 
-            # for edge in edge_list:
-            #     edge.count = count 
 
         # Step 4: refinining Q with respects to B
         Q = self.fastsplit(preB, Q)
@@ -570,9 +568,9 @@ class BiSimulatMini:
         Q = self.partition0()          # "fine" partition 
 
         # this is the "coarse" partition and the compound blocks
-        X = self.inti_X(Q)                                            # starts as the entire set of states 
-        self.worklist.insert(X.head)                                  # U is compound so it goes to the worklist  
-        X.head.in_c = True                                            # compound  block added to worklist            
+        X = self.inti_X(Q)                                                 # starts as the entire set of states 
+        self.worklist.insert(X.head.data)                                  # U is compound so it goes to the worklist  
+        X.head.data.in_c = True                                            # compound  block added to worklist            
 
         # iterative partition refinment 
         while self.worklist.size > 0:
