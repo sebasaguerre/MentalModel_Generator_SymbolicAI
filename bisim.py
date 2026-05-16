@@ -19,8 +19,8 @@ class Node:
         self.parent_dll.remove(self)
         
         # assign new dll and insert node
-        self.parent_dll = new_dll 
-        return self.parent_dll.insert(self, node=True)
+        # self.parent_dll = new_dll 
+        return new_dll.insert(self, node=True)
 
 class DLL:
     """
@@ -39,7 +39,8 @@ class DLL:
         else:
             # this is to accomodate easy movement of nodes between DLLs
             # in this case the data is the node itself  
-            node = data 
+            node = data
+            node.parent_dll = self 
 
         # check if list is empty 
         if not self.head:
@@ -451,6 +452,7 @@ class BiSimulatMini:
         # Step 2: update X 
         S.sub_blocks.remove(B.node_x)                 
         Sprime = LargeB()                            # create new block of X which is simple 
+        B.block_x = Sprime                           # make S' the parent node of B 
         B.node_x = Sprime.sub_blocks.insert(B)       # insert B into S'
         X.insert(Sprime)                             # insert S' into X
 
@@ -511,7 +513,7 @@ class BiSimulatMini:
 
             # this is count(x, B) and count(x, S)
             xcountB = x.current_count
-            xcountS = edges_to_B[0].couter 
+            xcountS = edges_to_B[0].count
             
             # decrease cout(x, S) for all edges xEy st y in B'
             xcountS.value -= xcountB.value
