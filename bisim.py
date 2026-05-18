@@ -526,7 +526,6 @@ class BiSimulatMini:
             
             return X, Q
 
-
     def _fPTalgo(self):
         """
         The fast implementation of the PT algorithm.
@@ -581,7 +580,78 @@ class BiSimulatMini:
             X, Q = self.refinement(X, Q)
 
         return Q
-    
 
+    def extract_state(self, Q_final):
+        """
+        Extract macro states from refiened Coarse Partition 
 
+        Reuturn
+            macro_states: learned abstract states
+            mapping: original_state -> macro_state
+            bisimi_states: set of bisimilar states, states that make up a macro_state
+        """
+
+        # extract states 
+        macro_states = set()
+        mapping = dict()           # Original -> Macro
+        bisim_states = dict()      # Macro -> [Original] 
+        node = Q_final.head
+        idx = 1
+        
+        # iterate over the partition
+        while node is not None:
+
+            # extract block from partition and the fist element's node 
+            block = node.data.elements
+            snode = block.head
+
+            # set macro state 
+            macro_state  = f"x{idx}"
+            macro_states.add(macro_state)
+            bisim_states[macro_state] = []
+
+            # iterate over the elements of the partition 
+            while snode is not None:
+                # add maps
+                state = snode.data.id
+                bisim_states[macro_state].append(state)
+                mapping[state] = macro_state
+                snode = snode.next 
+
+            # got to next macro state
+            idx += 1
+            node = node.next
+
+        return macro_states, mapping, bisim_states
+
+    def quotient_construction(self, Q_final):
+       
+        # new quotient model 
+        macro_states, mapping, _ = self.extract_states(Q_final)
+        quotient_relations = {x_id: set() for x_id in macro_states}
+        quotient_labels = dict()
+
+        # extract labels and relations using mapping
+        for org_state, macro_state in mapping.items():
+
+            # only go thorough a macro_state once 
+            if macro_state not in quotient_labels:
+
+                # group member acts as representative of macro 
+                quotient_labels[macro_state] = self.labels[org_state]
+
+                # get original relations for representaitve member
+                group_relations = self.edges[org_state]
+
+                # add quotient relations
+                for target in group_relations:
+                    quotient_relations[macro_state].add(mapping[target])
+
+        return macro_states, quotient_relations, quotient_labels, mapping 
     
+    def bisim(self):
+        # run the PT algorithm
+        Q_final = self.fastPTalgo()
+
+        # perform quotient construction to generate bisimilar model
+        return self.quotient_construction(Q_final)         # returns tuple: (macro_states, quotient_relat, quotient_labels)

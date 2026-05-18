@@ -4,81 +4,107 @@ from bisim import BiSimulatMini
 class MockModel:
     def __init__(self):
         # initial states
-        self.states = ["x1", "x2", "x3", "x4"]
+        self.states = ["s1", "s2", "s3", "s4"]
         
         # transitions (unlabeled relations)
         self.relations = {
-            "x1": ["x2", "x3"],  # Top p -> middle p, right q
-            "x2": ["x2", "x4"],  # Middle p -> self, bottom q
-            "x3": [],            # Right q -> dead end
-            "x4": []             # Bottom q -> dead end
+            "s1": ["s2", "s3"],  # Top p -> middle p, right q
+            "s2": ["s2", "s4"],  # Middle p -> self, bottom q
+            "s3": [],            # Right q -> dead end
+            "s4": []             # Bottom q -> dead end
         }
         
         # reverse transitions for preimages
         self.rev_relations = {
-            "x1": [],
-            "x2": ["x1", "x2"],  # Came from top p and self
-            "x3": ["x1"],        # Came from top p
-            "x4": ["x2"]         # Came from middle p
+            "s1": [],
+            "s2": ["s1", "s2"],  # Came from top p and self
+            "s3": ["s1"],        # Came from top p
+            "s4": ["s2"]         # Came from middle p
         }
         
         # labels (atomic propositions)
         self.labels = {
-            "x1": {"p"},
-            "x2": {"p"},
-            "x3": {"q"},
-            "x4": {"q"}
+            "s1": {"p"},
+            "s2": {"p"},
+            "s3": {"q"},
+            "s4": {"q"}
         }
         
         # expected partition for bisimulation
-        self.expected = set(frozenset(block) for block in [["x1", "x2"], ["x3", "x4"]])
+        self.expected = set(frozenset(block) for block in [["s1", "s2"], ["s3", "s4"]])
+
+        # expected quotient model 
+        # self.quotient_model = {
+        #     "states": set(["x1", "x2"]), 
+        #     "relations" : {"x1" : set(["x1", "x2"]), "x2" : set()}, 
+        #     "labels" : {"x1": set(["p"]), "x2" : set(["q"])}
+        # }
+        self.expected_quotient = {
+            "num_states": 2,
+            "structural_tests": [
+                {"rep": "s1", "expected_label": {"p"}, "expected_target_reps": ["s1", "s3"]},
+                {"rep": "s3", "expected_label": {"q"}, "expected_target_reps": []}
+            ]
+        }
 
 class AdvancedGauntletModel:
     def __init__(self):
         # 7 States with 3 distinct initial labels
-        self.states = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"]
+        self.states = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
         
         # Dense forward relations (highly overlapping futures)
         self.relations = {
-            "x1": ["x3", "x5"],        # Splits evenly across distinct q-blocks
-            "x2": ["x3", "x4"],        # Points to the SAME q-block x3, but a different second one
-            "x3": ["x6", "x7"],        # Connects q-world to the r-world
-            "x4": ["x6"],              # Connects to r-world differently than x3
-            "x5": ["x1", "x2"],        # Cyclic feedback loop back to the p-world!
-            "x6": ["x6", "x7"],        # r-state with a self-loop and a cross-edge
-            "x7": ["x7"]               # Pure self-loop dead-end
+            "s1": ["s3", "s5"],        # Splits evenly across distinct q-blocks
+            "s2": ["s3", "s4"],        # Points to the SAME q-block s3, but a different second one
+            "s3": ["s6", "s7"],        # Connects q-world to the r-world
+            "s4": ["s6"],              # Connects to r-world differently than s3
+            "s5": ["s1", "s2"],        # Cyclic feedback loop back to the p-world!
+            "s6": ["s6", "s7"],        # r-state with a self-loop and a cross-edge
+            "s7": ["s7"]               # Pure self-loop dead-end
         }
         
         # Rigorously mapped reverse relations (Preimages)
         self.rev_relations = {
-            "x1": ["x5"],
-            "x2": ["x5"],
-            "x3": ["x1", "x2"],        # Critical shared pivot for p-states
-            "x4": ["x2"],
-            "x5": ["x1"],
-            "x6": ["x3", "x4", "x6"],  # Dense preimage block
-            "x7": ["x3", "x6", "x7"]
+            "s1": ["s5"],
+            "s2": ["s5"],
+            "s3": ["s1", "s2"],        # Critical shared pivot for p-states
+            "s4": ["s2"],
+            "s5": ["s1"],
+            "s6": ["s3", "s4", "s6"],  # Dense preimage block
+            "s7": ["s3", "s6", "s7"]
         }
         
         # Initial label grouping (Atomic Propositions)
         self.labels = {
-            "x1": {"p"},
-            "x2": {"p"},
-            "x3": {"q"},
-            "x4": {"q"},
-            "x5": {"q"},
-            "x6": {"r"},
-            "x7": {"r"}
+            "s1": {"p"},
+            "s2": {"p"},
+            "s3": {"q"},
+            "s4": {"q"},
+            "s5": {"q"},
+            "s6": {"r"},
+            "s7": {"r"}
         }
         
         # EXPECTED STABLE PARTITION:
         self.expected = set(frozenset(block) for block in [
-            ["x1"], 
-            ["x2"], 
-            ["x3", "x4"], 
-            ["x5"], 
-            ["x6", "x7"]
+            ["s1"], 
+            ["s2"], 
+            ["s3", "s4"], 
+            ["s5"], 
+            ["s6", "s7"]
         ])
+
+        # used for testing the quotient construction
+        self.expected_quotient = {
+            "num_states": 5,
+            "structural_tests": [
+                {"rep": "s1", "expected_label": {"p"}, "expected_target_reps": ["s3", "s5"]},
+                {"rep": "s2", "expected_label": {"p"}, "expected_target_reps": ["s3"]},
+                {"rep": "s3", "expected_label": {"q"}, "expected_target_reps": ["s6"]},
+                {"rep": "s5", "expected_label": {"q"}, "expected_target_reps": ["s1", "s2"]},
+                {"rep": "s6", "expected_label": {"r"}, "expected_target_reps": ["s6"]}
+            ]
+        }
 
 def run_reduction_test(test_model):
     # initialize mockmodel 
@@ -118,17 +144,46 @@ def run_reduction_test(test_model):
 
         algo_output = set(frozenset(block) for block in final_blocks)
             
-        # Validation Logic
-        if block_idx == len(model.expected):
-            if algo_output == model.expected:
-                print(f"\nSUCCESS! Successfully shrank to {len(model.expected)} stable blocks correctly! ")
-            else:
-                print(f"\nCorrect number partitions partitions but wrong classification...")
-        else:
-            print(f"\nFAILED: Expected exactly {len(model.expected)} collapsed blocks, but got {block_idx}.")
-            print("Check if a block was split incorrectly or if the cleanup didn't reset counts.")
+        # validation Logic Partition
+        if algo_output == model.expected:
+            print(f"\nSUCCESS! Successfully shrank to {len(model.expected)} stable blocks correctly!")
+        elif block_idx == len(model.expected):
+            print(f"\nCorrect number partitions partitions but wrong classification...")
+            print("Incorrect splitting: check if a block was split incorrectly or if the cleanup didn't reset counts.")
+            return
+        else: 
+            print(f"\nFAILED: Expected exactly {len(model.expected)} collapsed blocks, but got {block_idx}.")  
+            return 
+        
+        # testing Quotient Construction 
+        print(f"\n---- Executing Quotient Construction ---")
 
+        # test for Quotient Reconstruction
+        macro_states, quo_relations, quo_labels, mapping = minimizer.quotient_construction(final_Q)
+
+        for rep_state, expected_data in model.expected_quotient.items():
+
+            # Find what 'xi' token your engine assigned to this original state
+            my_macro_token = mapping[rep_state]
             
+            # A. Check Labels
+            if quo_labels[my_macro_token] != expected_data["label"]:
+                print(f"FAILED: Label mismatch at {my_macro_token} (rep: {rep_state})")
+                return
+                
+            # B. Check Relations
+            # Translate your hardcoded original targets into whatever 'xi' tokens they became
+            expected_tokens = set(mapping[target] for target in expected_data["targets"])
+            generated_tokens = set(quo_relations[my_macro_token])
+            
+            if expected_tokens != generated_tokens:
+                print(f"FAILED: Structural edge mismatch at {my_macro_token} (rep: {rep_state})")
+                print(f"Expected: {expected_tokens}")
+                print(f"Generated: {generated_tokens}")
+                return
+                
+        print("SUCCESS! Quotient constructio is structurally sound.")
+
     except Exception as e:
         print(f"\n💥 CRASH: The engine threw an exception during refinement.")
         import traceback

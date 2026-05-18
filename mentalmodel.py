@@ -28,6 +28,7 @@ class ModelStructure:
             
             # labels at future state 
             self.labels.setdefault(next_s, set()).add(f"r_{reward}")
+            
             if done:
                 self.labels.setdefault(next_s, set()).add(f"TS")
             
