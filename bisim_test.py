@@ -40,11 +40,8 @@ class MockModel:
         #     "labels" : {"x1": set(["p"]), "x2" : set(["q"])}
         # }
         self.expected_quotient = {
-            "num_states": 2,
-            "structural_tests": [
-                {"rep": "s1", "expected_label": {"p"}, "expected_target_reps": ["s1", "s3"]},
-                {"rep": "s3", "expected_label": {"q"}, "expected_target_reps": []}
-            ]
+            "s1": {"label": {"p"}, "targets": ["s1", "s3"]},
+            "s3": {"label": {"q"}, "targets": []}
         }
 
 class AdvancedGauntletModel:
@@ -96,14 +93,11 @@ class AdvancedGauntletModel:
 
         # used for testing the quotient construction
         self.expected_quotient = {
-            "num_states": 5,
-            "structural_tests": [
-                {"rep": "s1", "expected_label": {"p"}, "expected_target_reps": ["s3", "s5"]},
-                {"rep": "s2", "expected_label": {"p"}, "expected_target_reps": ["s3"]},
-                {"rep": "s3", "expected_label": {"q"}, "expected_target_reps": ["s6"]},
-                {"rep": "s5", "expected_label": {"q"}, "expected_target_reps": ["s1", "s2"]},
-                {"rep": "s6", "expected_label": {"r"}, "expected_target_reps": ["s6"]}
-            ]
+            "s1": {"label": {"p"}, "targets": ["s3", "s5"]},
+            "s2": {"label": {"p"}, "targets": ["s3"]},
+            "s3": {"label": {"q"}, "targets": ["s6"]},
+            "s5": {"label": {"q"}, "targets": ["s1", "s2"]},
+            "s6": {"label": {"r"}, "targets": ["s6"]}
         }
 
 def run_reduction_test(test_model):
