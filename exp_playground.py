@@ -59,6 +59,7 @@ class GridWorld:
     
     def step(self, action_idx):
         action = self.actions[action_idx]
+        action_name = self.action_map[action_idx]
 
         #  coordinate change 
         x, y = self.agent_pos
@@ -83,11 +84,11 @@ class GridWorld:
                 reward = 10
                 done = True 
 
-            return ((x, y), action_idx, self.agent_pos, reward, done)
+            return ((x, y), action_name, self.agent_pos, reward, done)
         else:
             # no location update + punishment for illegal action
             reward = -1 
-            return (self.agent_pos, action_idx, self.agent_pos, reward, done)
+            return (self.agent_pos, action_name, self.agent_pos, reward, done)
 
     def render(self):
         """Simple text base rendering"""
@@ -131,11 +132,11 @@ def main():
 
     # init set-up
     env = GridWorld(6, 3)
-    memory = XP_Replay(1000)
-    kripke = ModelStructure()
+    # memory = XP_Replay(1000)
+    kripke = ModelStructure(maps=env.action_map)
 
     # display GW env
-    if input("Display GW env? ").lower().strip() == "y":
+    if input("Display GW env. (beggining state)? ").lower().strip() == "y":
         env.render()
         input()
 
@@ -155,7 +156,7 @@ def main():
             action = np.random.choice(len(env.actions))
             # get and save experience 
             xp = env.step(action)
-            memory.push(xp)
+            # memory.push(xp)
 
             # increase counter 
             episode_len += 1
@@ -181,4 +182,5 @@ def main():
 
 
 # program execution 
-main()
+if __name__ == "__main__":
+    main()
