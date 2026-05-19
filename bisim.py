@@ -581,7 +581,7 @@ class BiSimulatMini:
 
         return Q
 
-    def extract_state(self, Q_final):
+    def extract_states(self, Q_final):
         """
         Extract macro states from refiened Coarse Partition 
 
@@ -627,7 +627,7 @@ class BiSimulatMini:
     def quotient_construction(self, Q_final):
        
         # new quotient model 
-        macro_states, mapping, _ = self.extract_states(Q_final)
+        macro_states, mapping, bisim_states = self.extract_states(Q_final)
         quotient_relations = {x_id: set() for x_id in macro_states}
         quotient_labels = dict()
 
@@ -647,11 +647,17 @@ class BiSimulatMini:
                 for target in group_relations:
                     quotient_relations[macro_state].add(mapping[target])
 
-        return macro_states, quotient_relations, quotient_labels, mapping 
+        return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
     
-    def bisim(self):
+    def bisim(self, maps=False):
         # run the PT algorithm
         Q_final = self.fastPTalgo()
 
-        # perform quotient construction to generate bisimilar model
-        return self.quotient_construction(Q_final)         # returns tuple: (macro_states, quotient_relat, quotient_labels)
+        # perform quotient construction to generate the quotient system 
+        macro_states, quotient_relations, quotient_labels, mapping, bisim_states = self.quotient_construction(Q_final)
+
+        # return mapping if maps
+        if maps:
+            return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
+        else:
+            return macro_states, quotient_relations, quotient_labels

@@ -97,7 +97,7 @@ class AdvancedGauntletModel:
             "s2": {"label": {"p"}, "targets": ["s3"]},
             "s3": {"label": {"q"}, "targets": ["s6"]},
             "s5": {"label": {"q"}, "targets": ["s1", "s2"]},
-            "s6": {"label": {"r"}, "targets": ["s6"]}
+            "s6": {"label": {"r"}, "targets": ["s6", "s7"]}
         }
 
 def run_reduction_test(test_model):
@@ -153,7 +153,13 @@ def run_reduction_test(test_model):
         print(f"\n---- Executing Quotient Construction ---")
 
         # test for Quotient Reconstruction
-        macro_states, quo_relations, quo_labels, mapping = minimizer.quotient_construction(final_Q)
+        macro_states, quo_relations, quo_labels, mapping, bisim_states = minimizer.quotient_construction(final_Q)
+
+        # print quotient model
+        for macro_state in macro_states:
+            print(f"Macro state {macro_state}:\n\t Relations:{quo_relations[macro_state]} \n\tLabels: {quo_labels[macro_state]}")
+        
+        print(f"\nMapping Macro -> Original: \n{bisim_states}")
 
         for rep_state, expected_data in model.expected_quotient.items():
 
@@ -176,7 +182,7 @@ def run_reduction_test(test_model):
                 print(f"Generated: {generated_tokens}")
                 return
                 
-        print("SUCCESS! Quotient constructio is structurally sound.")
+        print("\n\nSUCCESS! Quotient constructio is structurally sound.")
 
     except Exception as e:
         print(f"\n💥 CRASH: The engine threw an exception during refinement.")
@@ -187,5 +193,5 @@ if __name__ == "__main__":
    print("Testing with simple model\n")
    run_reduction_test(MockModel())
 
-   print("Testing with complex model\n")
+   print("\n\nTesting with complex model\n")
    run_reduction_test(AdvancedGauntletModel())
