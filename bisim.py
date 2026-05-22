@@ -181,7 +181,6 @@ class BiSimulatMini:
         self.edges = model.relations
         self.premap = model.rev_relations
         self.labels = model.labels
-        self.worklist = DLL()                # list of splitter candidates
     
     def record_builder(self):
 
@@ -224,7 +223,7 @@ class BiSimulatMini:
         # loop over the entire relation structure 
         for world, successors in self.edges.items():
             for s in successors:
-                self.preimage.setdefault(s, set()).add(world)
+                self.preimage[s].add(world)
     
     def partition0(self):
         """
@@ -565,8 +564,9 @@ class BiSimulatMini:
         # generate records
         self.record_builder()
         
-        # initalize partition based on labels
+        # initalize partition based on labels and setup worklist
         Q = self.partition0()          # "fine" partition 
+        self.worklist = DLL()
 
         # this is the "coarse" partition and the compound blocks
         X = self.inti_X(Q)                                                 # starts as the entire set of states 

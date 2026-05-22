@@ -1,6 +1,7 @@
+import time 
 import numpy as np
 from rl_agent import XP_Replay 
-from mentalmodel import ModelStructure
+from mentalmodel import KripkeMM
 
 class GridWorld:
     """Simple implementation of GridWorld for testing"""
@@ -17,7 +18,7 @@ class GridWorld:
 
     def reset(self):
         self.agent_pos = self.start_pos
-        return self.agent_pos
+        # return self.agent_pos
     
     def gen_terminal(self, n, min_dist=3):
         """
@@ -84,11 +85,11 @@ class GridWorld:
                 reward = 10
                 done = True 
 
-            return ((x, y), action_name, self.agent_pos, reward, done)
+            return ((x, y), action_idx, self.agent_pos, reward, done)
         else:
             # no location update + punishment for illegal action
             reward = -1 
-            return (self.agent_pos, action_name, self.agent_pos, reward, done)
+            return (self.agent_pos, action_idx, self.agent_pos, reward, done)
 
     def render(self):
         """Simple text base rendering"""
@@ -118,37 +119,30 @@ def sample_episode(envir, policy):
     pass
 
 
-def main():
-
-    # experiment info
-    n = int(input("Number of epochs? "))
-    while True:
-        
-        render = input("Render experiment (y/n)? ").lower().strip()
-        if render in ["n", "y"]:
-            render = (render == "y")
-            break
-        print("Please enter 'n' or 'y'.")
-
-    # init set-up
-    env = GridWorld(6, 3)
+def experiment(env, model, epochs, visualize=False,
+               render=False, view_env=False):
+    
     # memory = XP_Replay(1000)
-    kripke = ModelStructure(maps=env.action_map)
+    model = model
 
     # display GW env
-    if input("Display GW env. (beggining state)? ").lower().strip() == "y":
+    if view_env:
         env.render()
         input()
 
     # simple statistics
     e_lengths = []
+    struct_size = []
+    meta_size = []
 
-    print("\nExperiment starts")
+    if render:
+        print("\nExperiment starts")
     # collect data for n epoch
-    for i in range(n):
+    for i in range(epochs):
 
         # episode len counter
         episode_len = 0 
+        env.reset()
 
         # act until reaching some terminal state 
         while True:
@@ -164,21 +158,56 @@ def main():
             # render grid
             if render:
                 env.render()
+                time.sleep(1)
 
             # generate mental model incrementally
-            kripke.generate([xp])
+            model.update_structure([xp])
 
             # end epoch if agend reaches terminal state 
             if xp[-1] == True:
                 break
 
+        # display current kripke structure 
+        if visualize:
+            print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
+            model.struct.visualize()
+            input()
+
+        # generate abstract model 
+        if i % 5 == 0 and i != 0:
+            model.generate_model()
+            if visualize:
+                model.visualize(model.abst)
+                input()
+        
         # update statistics
         e_lengths.append(episode_len)
+        struct_size.append(len(model.struct.states))
+        meta_size.append(len(model.struct.states))
 
-        # display current kripke structure 
-        print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
-        kripke.visualize()
-        input()
+    return e_lengths, struct_size, meta_size 
+
+
+def main():
+    # experiment info
+    n = int(input("Number of epochs? "))
+    while True:
+        
+        render = input("Render experiment (y/n)? ").lower().strip()
+        if render in ["n", "y"]:
+            render = (render == "y")
+            break
+        print("Please enter 'n' or 'y'.")
+
+    # display GW env
+    view_env = input("Display GW env. (beggining state)? ").lower().strip() == "y"
+    visualize = input("Visuaize model? ").lower().strip() == "y"
+     
+    # init model
+    model = KripkeMM()
+
+    # run experiment 
+    experiment(n, 6, 3, model, visualize=visualize, render=render, view_env=view_env)
 
 
 # program execution 
