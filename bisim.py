@@ -580,6 +580,88 @@ class BiSimulatMini:
             X, Q = self.refinement(X, Q)
 
         return Q
+    
+    def fastsplit_k(self, B, Q):
+        """
+        Fast splitting using pointers for k-depth bisimulation 
+        """
+
+        associated = {}        # maps an old block D to its newly born split-block Dprime
+        split_blocks = set()   # tracks which blocks were modified during this slice
+
+        # collect the actual preimage elements from B dynamically
+        # we over elements y in B, and inspect their preimage edges
+        node = B.elements.head
+        while node is not None:
+            y_state = node.data
+
+            # iterate over preimage of y (element of B)
+            for edge in y_state.preimage:
+                x_state = edge.source  # This state transitions into B
+                
+                D = x_state.block_q
+                
+                # We cannot split a block against itself if it's the splitter 
+                # or if it's a freshly created block from this particular splitter scan
+                if D not in associated:
+                    Dprime = SmallB()
+                    # Directly insert Dprime into our global Partition list/DLL
+                    Dprime.node = Q.insert(Dprime)
+                    
+                    split_blocks.add(D)
+                    associated[D] = Dprime
+                else:
+                    Dprime = associated[D]
+                
+                # Move node instantly using your custom O(1) link method
+                x_state.node = x_state.node.move_node(Dprime.elements)
+                x_state.block_q = Dprime
+                
+            node = node.next
+
+        # clean up empty blocks left behind by the migration
+        for D in split_blocks:
+            if D.elements.size == 0:
+                Q.remove(D.node)
+                D.node = None
+                
+        return Q
+    
+    def k_depth_refinment(self, k):
+        """
+        Partition refinment to a depth of k
+        Algorithm complexity O(k*m)
+        """
+        # initialize record builder 
+        self.record_builder
+
+        # init partition based of labels => k = 0 
+        Q = self.partition0()
+
+        # synchronous refinment for k layers 
+        for depth in range(1, k + 1):
+
+            # we get all the splitters at this level and iterate through them
+            current_depth_splitters = []
+            node = Q .head
+            while node is not None:
+                current_depth_splitters.append(node.data)
+                node = node.next 
+
+            # early stop if no more refinment is possible
+            if len(current_depth_splitters) == 0: 
+                break 
+
+            # refine every block in the partition with the current depth splitters
+            for B in current_depth_splitters:
+                # skip blocks that have become empty by previous splitters 
+                if B.elements.size == 0:
+                    continue
+
+                # split Q using current splitter 
+                Q = self.fastsplit_k(B, Q)
+
+        return Q
 
     def extract_states(self, Q_final):
         """
@@ -625,6 +707,9 @@ class BiSimulatMini:
         return macro_states, mapping, bisim_states
 
     def quotient_construction(self, Q_final):
+        """
+        Using the newly refined partition find its quotient model
+        """
        
         # new quotient model 
         macro_states, mapping, bisim_states = self.extract_states(Q_final)
@@ -661,3 +746,19 @@ class BiSimulatMini:
             return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
         else:
             return macro_states, quotient_relations, quotient_labels
+    
+    def k_bisim(self, k, maps=False):
+        """Running partition refinement up to a depth of k"""
+        # run k depth refinment ~ 
+        Q_final = self.k_depth_refinment(k)
+
+        # perform quotient construction to generate the quotient system 
+        macro_states, quotient_relations, quotient_labels, mapping, bisim_states = self.quotient_construction(Q_final)
+
+        # return mapping if maps
+        if maps:
+            return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
+        else:
+            return macro_states, quotient_relations, quotient_labels
+    
+
