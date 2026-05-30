@@ -62,4 +62,5 @@ class BoundLVCompress:
             labels_s_extend = self.labels[s] + ["¬" + prop for prop in self.labels[x] if prop not in self.labels[s]]
 
     def compute_distance(self, x, s, current_depth, max_k, discount):
-        # caluclate 
+        # caluclate
+        pass 

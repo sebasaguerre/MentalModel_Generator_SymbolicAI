@@ -1,11 +1,12 @@
 import time 
+import math
 import numpy as np
 from rl_agent import XP_Replay 
-from mentalmodel import KripkeMM
+from mentalmodel import KripkeMM, KMMcompare
 
 class GridWorld:
     """Simple implementation of GridWorld for testing"""
-    def __init__(self, size, ndeathpits, seed=10):
+    def __init__(self, size, ndeathpits, seed=8):
         self.rng = np.random.default_rng(seed=seed)
         self.grid_size = size
         self.actions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -19,44 +20,97 @@ class GridWorld:
     def reset(self):
         self.agent_pos = self.start_pos
         # return self.agent_pos
-    
-    def gen_terminal(self, n, min_dist=3):
+
+    def gen_terminal(self, n, padding=1):
         """
-        Generate n deathe that are evenly dist across the grid
-        using Jittered Grid and min dist.
-        -> Constrained Jittered Grid
+        Generate n death pits spread across the grid using a Jittered Grid approach,
+        guaranteeing they do not touch the outer edges.
         """
         death_pits = []
 
-        # upper bound number of bins to account for odd number of TS
+        # Define the inner usable area to completely avoid edges
+        usable_start = padding
+        usable_end = self.grid_size - padding 
+        usable_size = usable_end - usable_start
+
+        if usable_size <= 0:
+            raise ValueError("Grid size is too small for the requested padding.")
+
+        # Determine grid split for jittering
         bins_per_side = int(np.ceil(np.sqrt(n)))
-        bin_size = self.grid_size // bins_per_side
+        bin_size = usable_size / bins_per_side
 
-        # compute minimal distance (accoring to theoretical values maximal spread of 50-75%)
-        min_dist = 0.6 * (self.grid_size / np.sqrt(n))
+        # Dynamic minimal distance calculation based on the usable zone
+        min_dist = math.ceil(0.6 * (usable_size / np.sqrt(n)))
 
-        # navigate through the bins 
+        # Navigate through the bins 
         for r_bin in range(bins_per_side):
             for c_bin in range(bins_per_side):
+                if len(death_pits) >= n: 
+                    break
 
-                while True:
-                    # generte coordinate on bin
-                    r = self.rng.integers(r_bin * bin_size, (r_bin + 1) * bin_size)
-                    c = self.rng.integers(c_bin * bin_size, (c_bin + 1) * bin_size)
+                attempts = 0 
+                while attempts < 100:
+                    attempts += 1
+                    
+                    r_low = int(usable_start + r_bin * bin_size)
+                    r_high = int(usable_start + (r_bin + 1) * bin_size)
+                    c_low = int(usable_start + c_bin * bin_size)
+                    c_high = int(usable_start + (c_bin + 1) * bin_size)
 
-                    too_close = any(((r - dp[0])**2 + (c -dp[1])**2)**0.5 < min_dist for dp
-                                    in death_pits)
+                    r_high = max(r_low + 1, min(r_high, usable_end))
+                    c_high = max(c_low + 1, min(c_high, usable_end))
 
-                    # check if state matches requirements
+                    r = self.rng.integers(r_low, r_high)
+                    c = self.rng.integers(c_low, c_high)
+
+                    too_close = any(((r - dp[0])**2 + (c - dp[1])**2)**0.5 < min_dist for dp in death_pits)
+
                     if not too_close:
                         if (r, c) != self.start_pos and (r, c) != self.goal_pos:
-                            # add state 
                             death_pits.append((r, c))
                             break
-                
-        # shuffle terminal state and then choose
+
         self.rng.shuffle(death_pits)
         return death_pits[:n]
+    
+    # def gen_terminal(self, n, min_dist=3):
+    #     """
+    #     Generate n deathe that are evenly dist across the grid
+    #     using Jittered Grid and min dist.
+    #     -> Constrained Jittered Grid
+    #     """
+    #     death_pits = []
+
+    #     # upper bound number of bins to account for odd number of TS
+    #     bins_per_side = int(np.ceil(np.sqrt(n)))
+    #     bin_size = self.grid_size // bins_per_side
+
+    #     # compute minimal distance (accoring to theoretical values maximal spread of 50-75%)
+    #     min_dist = 0.6 * (self.grid_size / np.sqrt(n))
+
+    #     # navigate through the bins 
+    #     for r_bin in range(bins_per_side):
+    #         for c_bin in range(bins_per_side):
+
+    #             while True:
+    #                 # generte coordinate on bin
+    #                 r = self.rng.integers(r_bin * bin_size, (r_bin + 1) * bin_size)
+    #                 c = self.rng.integers(c_bin * bin_size, (c_bin + 1) * bin_size)
+
+    #                 too_close = any(((r - dp[0])**2 + (c -dp[1])**2)**0.5 < min_dist for dp
+    #                                 in death_pits)
+
+    #                 # check if state matches requirements
+    #                 if not too_close:
+    #                     if (r, c) != self.start_pos and (r, c) != self.goal_pos:
+    #                         # add state 
+    #                         death_pits.append((r, c))
+    #                         break
+                
+    #     # shuffle terminal state and then choose
+    #     self.rng.shuffle(death_pits)
+    #     return death_pits[:n]
     
     def step(self, action_idx):
         action = self.actions[action_idx]
@@ -120,25 +174,29 @@ def sample_episode(envir, policy):
 
 
 def experiment(env, model, epochs, visualize=False,
-               render=False, view_env=False):
+               render=False, view_env=False, compare=False, **kwargs):
     
     # memory = XP_Replay(1000)
     model = model
 
     # display GW env
     if view_env:
+        print(env.death_pits)
+        input()
         env.render()
         input()
 
     # simple statistics
     e_lengths = []
     struct_size = []
-    meta_size = []
+    meta_size = {"bisim": []} if not compare else {"bisim": [], "k_bisim" : []}
 
     if render:
         print("\nExperiment starts")
+
+
     # collect data for n epoch
-    for i in range(epochs):
+    for i in range(1, epochs + 1):
 
         # episode len counter
         episode_len = 0 
@@ -167,48 +225,90 @@ def experiment(env, model, epochs, visualize=False,
             if xp[-1] == True:
                 break
 
-        # display current kripke structure 
-        if visualize:
-            print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
-            model.struct.visualize()
-            input()
+        # # display current kripke structure 
+        # if visualize["structure"]:
+        #     print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
+        #     model.struct.visualize()
+        #     input()
 
         # generate abstract model 
         if i % 5 == 0 and i != 0:
-            model.generate_model()
+            # generate based on bisim
+            if compare == True:
+                model.generate_model()
+                model.generate_model(**kwargs)
+            
+            else:
+                model.generate_model(**kwargs)
+
             if visualize:
-                model.visualize(model.abst)
+                print(f"Compressed model at iter {i}, total nodes in structure: {len(model.struct.states)}")
+                if compare and getattr(model, "abst_k", None):
+                    print(f"Standard Bisimulation ({len(model.abst.states)} states)")
+                    model.visualize(model.abst, title="Bisim")
+                    input()
+                    print(f"Visualizing k-Bisimulation({len(model.abst_k.states)} states)")
+                    model.visualize(model.abst_k, title="k-Bisim")
+                else:
+                    model.visualize(model.abst)
+                
+                # give time to view generated models
                 input()
         
         # update statistics
         e_lengths.append(episode_len)
         struct_size.append(len(model.struct.states))
-        meta_size.append(len(model.struct.states))
+
+        # check if model has been generated yet 
+        if not model.abst:
+
+            meta_size["bisim"].append(0)
+
+            if compare:
+                meta_size["k_bisim"].append(0)        
+        else:
+            meta_size["bisim"].append(len(model.abst.states))
+
+            if compare:
+                meta_size["k_bisim"].append(len(model.abst_k.states))   
 
     return e_lengths, struct_size, meta_size 
 
 
 def main():
+    # inti env
+    env = GridWorld(6, 3)
+
     # experiment info
     n = int(input("Number of epochs? "))
-    while True:
-        
-        render = input("Render experiment (y/n)? ").lower().strip()
-        if render in ["n", "y"]:
-            render = (render == "y")
-            break
-        print("Please enter 'n' or 'y'.")
+   
+    if input("Exp. details? ").lower().strip() == "y":
+        # render = input("Render experiment (y/n)? ").lower().strip() == "y"
 
-    # display GW env
-    view_env = input("Display GW env. (beggining state)? ").lower().strip() == "y"
-    visualize = input("Visuaize model? ").lower().strip() == "y"
-     
+        # display GW env
+        view_env = input("Display GW env. (beggining state)? ").lower().strip() == "y"
+        visualize = input("Visuaize model? ").lower().strip() == "y"
+    
+    else: 
+        render, view_env, visualize = False, False, False
+        visualize = {"structure" : False}
+    
+    #compare models 
+    compare = input("Compare models? ").lower().strip() == "y"
+    
+    # select 
+    k = input("Choose k-depth (yes=int, no=no): ").strip()
+    k = int(k) if k.isnumeric() else None
+    print("\n\n")
+
     # init model
-    model = KripkeMM()
+    if compare:
+        model = KMMcompare()
+    else:
+        model = KripkeMM()
 
     # run experiment 
-    experiment(n, 6, 3, model, visualize=visualize, render=render, view_env=view_env)
-
+    experiment(env, model, n, visualize=visualize, render=False, view_env=view_env, compare=compare, k=k)
 
 # program execution 
 if __name__ == "__main__":

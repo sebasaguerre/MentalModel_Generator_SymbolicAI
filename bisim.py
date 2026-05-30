@@ -184,7 +184,7 @@ class BiSimulatMini:
     
     def record_builder(self):
 
-        self.records = {"states": [], "edges": [], "Qblocks": [], "Xblocks": []}
+        self.records = {"states": [], "edges": []}
 
         # NOTE: # we can make this efficient to recicle states, by checking if the entry exists
         # state to record map:
@@ -633,7 +633,7 @@ class BiSimulatMini:
         Algorithm complexity O(k*m)
         """
         # initialize record builder 
-        self.record_builder
+        self.record_builder()
 
         # init partition based of labels => k = 0 
         Q = self.partition0()
@@ -748,7 +748,7 @@ class BiSimulatMini:
             return macro_states, quotient_relations, quotient_labels
     
     def k_bisim(self, k, maps=False):
-        """Running partition refinement up to a depth of k"""
+        """k-depth bisimulation"""
         # run k depth refinment ~ 
         Q_final = self.k_depth_refinment(k)
 
