@@ -126,7 +126,7 @@ class GridWorld:
 
 
         # check if action is action is valid
-        if  0<= nx < self.grid_size and 0 <= ny < self.grid_size:
+        if  0 <= nx < self.grid_size and 0 <= ny < self.grid_size:
             self.agent_pos = (nx, ny)
 
             # check if agent reached a terminal state  
@@ -181,8 +181,6 @@ def experiment(env, model, epochs, visualize=False,
 
     # display GW env
     if view_env:
-        print(env.death_pits)
-        input()
         env.render()
         input()
 
@@ -207,6 +205,7 @@ def experiment(env, model, epochs, visualize=False,
             # select random action 
             action = np.random.choice(len(env.actions))
             # get and save experience 
+            # (s, a, s', r, done)
             xp = env.step(action)
             # memory.push(xp)
 
@@ -225,19 +224,18 @@ def experiment(env, model, epochs, visualize=False,
             if xp[-1] == True:
                 break
 
-        # # display current kripke structure 
-        # if visualize["structure"]:
-        #     print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
-        #     model.struct.visualize()
-        #     input()
+        # display current kripke structure 
+        if visualize:
+            print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
+            model.struct.visualize()
+            input()
 
         # generate abstract model 
-        if i % 5 == 0 and i != 0:
+        if i % 3 == 0 and i != 0:
             # generate based on bisim
             if compare == True:
                 model.generate_model()
                 model.generate_model(**kwargs)
-            
             else:
                 model.generate_model(**kwargs)
 
@@ -261,7 +259,7 @@ def experiment(env, model, epochs, visualize=False,
 
         # check if model has been generated yet 
         if not model.abst:
-
+            
             meta_size["bisim"].append(0)
 
             if compare:
@@ -296,19 +294,24 @@ def main():
     #compare models 
     compare = input("Compare models? ").lower().strip() == "y"
     
-    # select 
-    k = input("Choose k-depth (yes=int, no=no): ").strip()
-    k = int(k) if k.isnumeric() else None
-    print("\n\n")
+    # select model details 
+    if input("Select model parameters? ").lower().strip() == "y":
+        k = input("Choose k-depth (yes=int, no=no): ").strip()
+        k = int(k) if k.isnumeric() else None
+        zone_radious = int(input("Zone radious: ").strip())
+    else:
+        k = None
+        zone_radious = None
+    
 
     # init model
     if compare:
-        model = KMMcompare()
+        model = KMMcompare(n_action=len(env.actions), complex_lables=True, zone_radious=zone_radious)
     else:
-        model = KripkeMM()
+        model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
 
     # run experiment 
-    experiment(env, model, n, visualize=visualize, render=False, view_env=view_env, compare=compare, k=k)
+    experiment(env, model, n, visualize=True, render=False, view_env=view_env, compare=compare, k=k)
 
 # program execution 
 if __name__ == "__main__":

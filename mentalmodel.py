@@ -11,30 +11,46 @@ from collections import defaultdict, deque
 
 
 class ModelStructure:
-    def __init__(self, n_action, labelling_function=None, maps=None, zones=None):
-        self.n_action = n_action
+    def __init__(self, n_action, labelling_function=None, complex_labels=True,
+                 zones=None, zone_radious=None):
+        """
+        Arguments:
+            - n_action := number of actions possible
+            - labelling_function := function that maps xp:(state, action, next_state, reward, done) into state labels 
+            - zones := dict{"zone1":"label1", "zone2":"label2", ...}
+        """
+        # structure attributes
         self.states = set()
         self.relations = defaultdict(set)
         self.rev_relations = defaultdict(set)             # pre image function for bisimulation
         self.labels = defaultdict(set)
-        self.maps = maps
+
+        # self.maps = maps
+
+        # building attributes 
+        self.complex_labels = complex_labels
+        self.n_action = n_action
 
         # cset zones depending on instantiation
         if zones is not None:
             self.zones = zones 
         else:
-            self.zones = {"GoalZone":"Goal", "DeathZone":"TN"}
+            self.zones = {"GoalZone":"Goal", "DeathZone":"TS"}
+
+        if zone_radious is not None:
+            self.zone_radious = zone_radious
+        else:
+            self.zone_radious = 3
 
         # if labelling function is give then use that instead of default
         if labelling_function:
             self.add_labels = types.MethodType(labelling_function, self)   # same as labellinf_function.__get__(self, ModelStructure)
-        
-      
 
 
     def within_radious_dfs(self, state, label, max_steps):
+
         # baseline success: label found at current state 
-        if label in self.model.labels[state]:
+        if label in self.labels[state]:
             return True
         
         # safety check, if max_steps is non-positive => no more search 
@@ -55,10 +71,10 @@ class ModelStructure:
                 continue
 
             # look at all successors of the current state 
-            for next_s in self.model.relations[current_state]:
+            for next_s in self.relations[current_state]:
                 if next_s not in visited:
                     # check if label is true at state 
-                    if label in self.model.labels[next_s]:
+                    if label in self.labels[next_s]:
                         return True 
                     
                     # label not found => Update visited and queue 
@@ -69,7 +85,7 @@ class ModelStructure:
         return False
     
 
-    def generate_labels(self, zone_radious=3):
+    def generate_labels(self):
         """
         Generate higher order labels lables that change dynamically.
         Labels like: 
@@ -77,9 +93,6 @@ class ModelStructure:
             - Proximity to goal 
             - Proximity to terminal states 
         """
-        # simple label patterns 
-        act_pattern = re.compile(r"^\d+a$")
-        entroy_pattern =   re
             
         for s in self.states:
 
@@ -87,19 +100,18 @@ class ModelStructure:
             s_labels = self.labels[s]
 
             bounds = any(label == "bound" for label in s_labels)
-            terminal = any(label in ["TN", "Goal"] for label in s_labels)
-            goal = any(label == "Goal" for label in s_labels )
+            terminal = any(label in ["TS", "Goal"] for label in s_labels)
             
-            act_exp= sum(1 for elem in self.labels[s] if act_pattern.match(elem)) / (self.n_action - bounds) 
+            act_exp=  sum(1 for elem in s_labels if elem.startswith("a")) / (self.n_action - bounds) 
 
             # entropy level of state 
-            entropy = f"E{'low' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'high'}"
+            entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
 
             # add dynamic entropy label and zones-labels 
             if not terminal:
                 
                 # check if state has an entopy level 
-                current_entropy = [label for label in self.labels[s] if label.statrtswith("E")]
+                current_entropy = [label for label in self.labels[s] if label.startswith("E")]
                 
                 # add or update entropy
                 if not current_entropy:
@@ -109,10 +121,10 @@ class ModelStructure:
                     self.labels[s].add(entropy)
 
                 # add zone label if applicable 
-                for zone, label in self.zoness.items():
+                for zone, label in self.zones.items():
                     if zone not in self.labels[s]:
-                        if self.within_radious_dfs(s, label, zone_radious):
-                            self.labels[s].append(zone)
+                        if self.within_radious_dfs(s, label, self.zone_radious):
+                            self.labels[s].add(zone)
 
                 
     def add_labels(self, s, action, next_s, reward, done):
@@ -134,7 +146,6 @@ class ModelStructure:
             else:
                 self.labels[next_s].add("TS")
             
-    
     def generate_structure(self, data: list[tuple]):
         
         # extract structural values 
@@ -149,14 +160,15 @@ class ModelStructure:
 
             # if reached terminal state add empty relations 
             if done:
-                self.relations[next_s] = set()
+                self.relations[next_s]        # or assign the empty set 
     
     def generate(self, data: list[tuple]):
         # generate structure and basic labels
         self.generate_structure(data)
 
         # labeling function: add complex labels 
-        self.generate_labels()
+        if self.complex_labels:
+            self.generate_labels()
 
     def visualize(self):
 

@@ -61,5 +61,5 @@ class Verify():
 def ContextGenerator():
     
     def __init__(self, model):
-        self.model = modeel
+        self.model = model
         self.verifier = Verify()

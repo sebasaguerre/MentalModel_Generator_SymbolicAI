@@ -1,0 +1,102 @@
+digraph {
+	node [fontname="Helvetica,Arial,sans-serif" fontsize=12 shape=padded_box]
+	nodesep=0.6 ranksep=0.6
+	rankdir=LR
+	"(0, 0)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(0, 0)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a0, bound, DeathZone, r_0, r_-1, E_low, a2, a3</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(1, 0)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(1, 0)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a0, bound, DeathZone, r_0, r_-1, E_low, a2, a3</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(1, 1)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(1, 1)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a0, DeathZone, r_0, E_low, a2, a3</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(1, 2)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(1, 2)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a2, E_high, DeathZone, r_0</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(1, 3)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(1, 3)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a2, E_high, DeathZone, r_0</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(1, 4)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(1, 4)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">r_-10, TS</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(2, 0)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(2, 0)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">bound, a0, a1, DeathZone, r_0, r_-1, E_low, a3</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(3, 0)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(3, 0)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">bound, a0, DeathZone, r_0, r_-1, E_low, a3</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(4, 0)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(4, 0)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a2, E_high, DeathZone, r_0</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(4, 1)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(4, 1)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">a2, E_high, DeathZone, r_0</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(4, 2)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(4, 2)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">r_-10, TS</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(0, 1)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(0, 1)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">E_high, a3, r_0</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(2, 1)" [label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD BGCOLOR="#EAEAEA"><B>(2, 1)</B></TD></TR>
+            <TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">r_-10, TS</FONT></TD></TR>
+            </TABLE>
+            > shape=none]
+	"(0, 0)" -> "(1, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(0, 0)" -> "(0, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(0, 0)" -> "(0, 1)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 0)" -> "(1, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 0)" -> "(1, 1)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 0)" -> "(2, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 1)" -> "(1, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 1)" -> "(1, 2)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 1)" -> "(2, 1)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 2)" -> "(1, 3)" [arrowhead=vee color="#4a4a4a"]
+	"(1, 3)" -> "(1, 4)" [arrowhead=vee color="#4a4a4a"]
+	"(2, 0)" -> "(1, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(2, 0)" -> "(2, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(2, 0)" -> "(3, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(3, 0)" -> "(4, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(3, 0)" -> "(3, 0)" [arrowhead=vee color="#4a4a4a"]
+	"(4, 0)" -> "(4, 1)" [arrowhead=vee color="#4a4a4a"]
+	"(4, 1)" -> "(4, 2)" [arrowhead=vee color="#4a4a4a"]
+	"(0, 1)" -> "(0, 0)" [arrowhead=vee color="#4a4a4a"]
+}

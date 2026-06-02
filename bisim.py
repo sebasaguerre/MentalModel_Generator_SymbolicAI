@@ -227,10 +227,7 @@ class BiSimulatMini:
     
     def partition0(self):
         """
-        Generate the initial partition
-
-        NOTE: Apparently we need the first partition to be already clustering states 
-        with the same labels, so we need to sort them as such.
+        Generate the initial partition, based on state labels
         """
 
         # inital partion init
