@@ -173,8 +173,8 @@ def sample_episode(envir, policy):
     pass
 
 
-def experiment(env, model, epochs, visualize=False,
-               render=False, view_env=False, compare=False, **kwargs):
+def experiment(env, model, epochs, visualize=False, render=False, view_env=False,
+                compare=False, model_iter=3, complex_labels=False, **kwargs):
     
     # memory = XP_Replay(1000)
     model = model
@@ -187,7 +187,10 @@ def experiment(env, model, epochs, visualize=False,
     # simple statistics
     e_lengths = []
     struct_size = []
-    meta_size = {"bisim": []} if not compare else {"bisim": [], "k_bisim" : []}
+    data_type = (lambda: {"simple": [], "complex": []} ) if complex_labels else list 
+    meta_size = {"bisim": data_type()} if not compare else {"bisim": data_type(), "k_bisim" : data_type()}
+    model_map = {"bisim" : {"simple":"simple_abst", "complex": "abst"},
+            "k_bisim": {"simple":"simple_abst_k", "complex": "abst_k"}}
 
     if render:
         print("\nExperiment starts")
@@ -218,6 +221,7 @@ def experiment(env, model, epochs, visualize=False,
                 time.sleep(1)
 
             # generate mental model incrementally
+
             model.update_structure([xp])
 
             # end epoch if agend reaches terminal state 
@@ -231,18 +235,15 @@ def experiment(env, model, epochs, visualize=False,
             input()
 
         # generate abstract model 
-        if i % 3 == 0 and i != 0:
+        if i % model_iter == 0 :
             # generate based on bisim
-            if compare == True:
-                model.generate_model()
-                model.generate_model(**kwargs)
-            else:
-                model.generate_model(**kwargs)
-
+            model.generate_model(**kwargs)
+            
             if visualize:
                 print(f"Compressed model at iter {i}, total nodes in structure: {len(model.struct.states)}")
-                if compare and getattr(model, "abst_k", None):
-                    print(f"Standard Bisimulation ({len(model.abst.states)} states)")
+                
+                if compare and getattr(model, "simple_abst_k", None):
+                    print(f"Standard Bisimulation ({len(getattr(model, "simple_abst").states)} states)")
                     model.visualize(model.abst, title="Bisim")
                     input()
                     print(f"Visualizing k-Bisimulation({len(model.abst_k.states)} states)")
@@ -257,18 +258,22 @@ def experiment(env, model, epochs, visualize=False,
         e_lengths.append(episode_len)
         struct_size.append(len(model.struct.states))
 
-        # check if model has been generated yet 
-        if not model.abst:
-            
-            meta_size["bisim"].append(0)
+        # update model size based on conditions
+        for key, val in meta_size.items():
 
-            if compare:
-                meta_size["k_bisim"].append(0)        
-        else:
-            meta_size["bisim"].append(len(model.abst.states))
-
-            if compare:
-                meta_size["k_bisim"].append(len(model.abst_k.states))   
+            # append len of 0 if model not yet created
+            if i < model_iter:
+                if type(val) is not dict:
+                    meta_size[key].append(0)
+                else:
+                    for label in val:
+                        meta_size[key][label].append(0)
+            else:
+                if type(val) is not dict:
+                    meta_size[key].append(len(getattr(model, model_map[key]["simple"]).states))
+                else:
+                    for label in val:
+                        meta_size[key][label].append(len(getattr(model, model_map[key][label]).states))
 
     return e_lengths, struct_size, meta_size 
 
@@ -289,7 +294,6 @@ def main():
     
     else: 
         render, view_env, visualize = False, False, False
-        visualize = {"structure" : False}
     
     #compare models 
     compare = input("Compare models? ").lower().strip() == "y"
@@ -298,20 +302,27 @@ def main():
     if input("Select model parameters? ").lower().strip() == "y":
         k = input("Choose k-depth (yes=int, no=no): ").strip()
         k = int(k) if k.isnumeric() else None
-        zone_radious = int(input("Zone radious: ").strip())
+        complex_labels = input("Complex labels? ").lower().strip() == "y"
+        if complex_labels:
+            zone_radious = int(input("Zone radious: ").strip())
+        else:
+            zone_radious = None
+        
     else:
         k = None
         zone_radious = None
+        complex_labels = False
     
-
     # init model
-    if compare:
-        model = KMMcompare(n_action=len(env.actions), complex_lables=True, zone_radious=zone_radious)
-    else:
-        model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
+    model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
+    # if compare:
+    #     model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
+    # else:
+    #     model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
 
     # run experiment 
-    experiment(env, model, n, visualize=True, render=False, view_env=view_env, compare=compare, k=k)
+    experiment(env, model, n, visualize=visualize, render=False, view_env=view_env,
+                compare=compare, complex_labels=complex_labels, k=k)
 
 # program execution 
 if __name__ == "__main__":

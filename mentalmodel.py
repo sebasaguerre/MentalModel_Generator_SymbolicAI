@@ -6,12 +6,12 @@ import numpy as np
 import networkx as nx
 from graphviz import Digraph
 import matplotlib.pyplot as plt
-from bisim import BiSimulatMini
+from bisim import BiSimMini
 from collections import defaultdict, deque
 
 
 class ModelStructure:
-    def __init__(self, n_action, labelling_function=None, complex_labels=True,
+    def __init__(self, n_action, labelling_function=None, multiedges=False, complex_labels=True,
                  zones=None, zone_radious=None):
         """
         Arguments:
@@ -21,15 +21,19 @@ class ModelStructure:
         """
         # structure attributes
         self.states = set()
-        self.relations = defaultdict(set)
-        self.rev_relations = defaultdict(set)             # pre image function for bisimulation
+        if multiedges:
+            self.relations = defaultdict(dict)       # {state : {action1: [next1,... ], act2: [next1, ...], ...} 
+            self.rev_relations = defaultdict(dict)
+        else:
+            self.relations = defaultdict(set)
+            self.rev_relations = defaultdict(set)    # pre image function for bisimulation
         self.labels = defaultdict(set)
-
         # self.maps = maps
 
         # building attributes 
         self.complex_labels = complex_labels
         self.n_action = n_action
+        self.multiedges = multiedges 
 
         # cset zones depending on instantiation
         if zones is not None:
@@ -221,9 +225,9 @@ class KripkeMM:
     """
     def __init__(self, **kwargs):
         self.struct = ModelStructure(**kwargs)                      # underlying structure 
-        self.compressor = BiSimulatMini(self.struct)        # compresion engine 
-        self.contex_generator = None                        # formula generator on basis of model
-        self.abst = None                                    # learned compressed model 
+        self.compressor = BiSimMini(self.struct)                    # compresion engine 
+        self.contex_generator = None                                # formula generator on basis of model
+        self.abst = None                                            # learned compressed model 
     
     def one_step_props(self, state):
         # get all the one step future proposition
@@ -336,6 +340,66 @@ class KMMcompare(KripkeMM):
         else:
             super().generate_model(k=k)
 
+    def update_structure(self, data):
+         self.struct.generate(data)
 
-    
-    
+
+class KMMcompare(KripkeMM):
+    """Current adjusted version to account for possible 4*4 comparion"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # init abst_k
+        self.abst_k = None
+        self.complex_labels = kwargs.get("complex_labels")
+        self.simple_abst = None
+        self.simple_abst_k = None
+
+        # if comparing with complex lables 
+        if self.complex_labels:
+            # init proper attributes for comparison
+            # self.simple_abst = None
+            # self.simple_abst_k = None
+            # initialize simple structure and its compressor
+            kwargs["complex_labels"] = False
+            self.simple_struct = ModelStructure(**kwargs)
+            self.simple_compressor = BiSimMini(self.simple_struct)
+
+    def _compress(self, compressor, k=None):
+        # generate abstract state with standard bisim of k-bisim
+        if k is not None:
+            macro_states, relations, labels, mapping, bisim_states = compressor.k_bisim(k, maps=True)
+        else:
+            macro_states, relations, labels, mapping, bisim_states = compressor.bisim(maps=True)
+
+        # abstract model 
+        return CompressedModel(
+            states=macro_states,
+            relations=relations,
+            labels=labels,
+            mapping=mapping,
+            bisim_states=bisim_states
+        )
+
+    def generate_model(self, k=None):
+
+        # check for structure 
+        if self.complex_labels:
+            self.simple_abst = self._compress(self.simple_compressor, k=None)
+            self.abst = self._compress(self.compressor, k=None)
+            # k-bisim 
+            if k is not None:
+                self.simple_abst_k = self._compress(self.simple_compressor, k=k)
+                self.abst_k = self._compress(self.compressor, k=k)
+        else:
+            # compressor normal compressore here becomes the "simple compressor"
+            self.simple_abst = self._compress(self.compressor, k=None)
+            if k is not None:
+                self.simple_abst_k = self._compress(self.compressor, k=k)
+
+    def update_structure(self, data):
+
+        self.struct.generate(data)
+        # update structures 
+        if self.complex_labels:
+            self.simple_struct.generate(data)

@@ -1,5 +1,5 @@
 
-
+### long live dead functions
 
 def gen_death_pits(rng, grid_size, n, min_dist=3):
     """
@@ -26,3 +26,12 @@ def gen_death_pits(rng, grid_size, n, min_dist=3):
                 death_pits.append(new_position)
 
     return death_pits
+
+# NOTE: this function might not be useful anymore... premap computed at generation
+def get_premap(self):
+    self.premap = dict()
+
+    # loop over the entire relation structure 
+    for world, successors in self.edges.items():
+        for s in successors:
+            self.preimage[s].add(world)

@@ -133,7 +133,20 @@ class Edge:
         self.source = count
         # self.target = y 
         self.count = None
-        # self.label = label    TODO: First without labeld edges then add 
+    
+# extended architecture for labeld edges 
+
+class labeldState(State):
+    def __init__(self, id):
+        super().__init__(id)
+        self.preimage = {}              # map: {action/label: [LabeldEdges]}
+
+class labeldEdge(State):
+    __slots__ = ["label"]
+    
+    def __init__(self, source, label):
+        super().__init__(source)
+        self.label = label
 
 class SmallB:
     "Blocks of Q (they are a subset of the blocks of X)"
@@ -171,7 +184,7 @@ class Counter:
 
 #####################################################################################################################################
 
-class BiSimulatMini:
+class BiSimMini:
     """ 
     Doing BiSimulation Minimization through Paige Tarjan Algorithm
     followed by quotient construction
@@ -181,6 +194,7 @@ class BiSimulatMini:
         self.edges = model.relations
         self.premap = model.rev_relations
         self.labels = model.labels
+        self.multiedges = model.multiedges 
     
     def record_builder(self):
 
@@ -215,16 +229,6 @@ class BiSimulatMini:
                 # add edges to record file 
                 self.records["edges"].append(edge)
 
-
-    # NOTE: this function might not be useful anymore... premap computed at generation
-    def get_premap(self):
-        self.premap = dict()
-
-        # loop over the entire relation structure 
-        for world, successors in self.edges.items():
-            for s in successors:
-                self.preimage[s].add(world)
-    
     def partition0(self):
         """
         Generate the initial partition, based on state labels
@@ -520,7 +524,7 @@ class BiSimulatMini:
                 for edge in edges_to_B:
                     edge.count = xcountB
             
-            return X, Q
+        return X, Q
 
     def _fPTalgo(self):
         """
@@ -578,50 +582,50 @@ class BiSimulatMini:
 
         return Q
     
-    def fastsplit_k(self, B, Q):
+    def fastsplit_k(self, B_elements, Q):
         """
-        Fast splitting using pointers for k-depth bisimulation 
+        Fast splitting using pointers for k-depth bisimulation.
+
+        Two-pass design is deliberate:
+          Pass 1 — collect the full preimage of B into a set BEFORE any moves.
+                   The set deduplicates: a state x that reaches multiple y in B
+                   must only be moved once, to the Dprime of its *original* block.
+                   Collecting first also keeps B.elements unmodified during
+                   traversal, preventing iterator corruption when preimage states
+                   happen to be inside B itself (back-edges / self-loops).
+          Pass 2 — move each preimage state exactly once using its current
+                   (= original, since no moves happened yet) block_q.
         """
 
-        associated = {}        # maps an old block D to its newly born split-block Dprime
-        split_blocks = set()   # tracks which blocks were modified during this slice
+        associated = {}        # maps original block D -> its split-off Dprime
+        split_blocks = set()   # tracks which original blocks were touched
 
-        # collect the actual preimage elements from B dynamically
-        # we over elements y in B, and inspect their preimage edges
-        node = B.elements.head
-        while node is not None:
-            y_state = node.data
+        # collect preimage of B without touching block assignments
+        preimage_of_B = dict()
+        for elem in B_elements:
+            for edge in elem.preimage:
+                preimage_of_B[edge.source] = None
 
-            # iterate over preimage of y (element of B)
-            for edge in y_state.preimage:
-                x_state = edge.source  # This state transitions into B
-                
-                D = x_state.block_q
-                
-                # We cannot split a block against itself if it's the splitter 
-                # or if it's a freshly created block from this particular splitter scan
-                if D not in associated:
-                    Dprime = SmallB()
-                    # Directly insert Dprime into our global Partition list/DLL
-                    Dprime.node = Q.insert(Dprime)
-                    
-                    split_blocks.add(D)
-                    associated[D] = Dprime
-                else:
-                    Dprime = associated[D]
-                
-                # Move node instantly using your custom O(1) link method
-                x_state.node = x_state.node.move_node(Dprime.elements)
-                x_state.block_q = Dprime
-                
-            node = node.next
+        # move each preimage state exactly once to Dprime(original block)
+        for x_state in preimage_of_B.keys():
+            D = x_state.block_q
+            if D not in associated:
+                Dprime = SmallB()
+                Dprime.node = Q.insert(Dprime)
+                split_blocks.add(D)
+                associated[D] = Dprime
+            else:
+                Dprime = associated[D]
+
+            x_state.node = x_state.node.move_node(Dprime.elements)
+            x_state.block_q = Dprime
 
         # clean up empty blocks left behind by the migration
         for D in split_blocks:
             if D.elements.size == 0:
                 Q.remove(D.node)
                 D.node = None
-                
+
         return Q
     
     def k_depth_refinment(self, k):
@@ -633,32 +637,40 @@ class BiSimulatMini:
         self.record_builder()
 
         # init partition based of labels => k = 0 
-        Q = self.partition0()
+        Q_k = self.partition0()
 
         # synchronous refinment for k layers 
         for depth in range(1, k + 1):
 
-            # we get all the splitters at this level and iterate through them
-            current_depth_splitters = []
-            node = Q .head
+            # we get all the splitters at this level (frozeen) and iterate through them
+            kdepth_splitters = []
+            node = Q_k.head
             while node is not None:
-                current_depth_splitters.append(node.data)
+                # elements of current block B
+                elements_B = []
+                elem_b = node.data.elements.head
+                while elem_b is not None:
+                    elements_B.append(elem_b.data)
+                    elem_b = elem_b.next 
+                
+                # append frozeen B and go to next block
+                kdepth_splitters.append(elements_B)
                 node = node.next 
 
-            # early stop if no more refinment is possible
-            if len(current_depth_splitters) == 0: 
-                break 
-
+            # current partition size before refinment 
+            size_before = Q_k.size 
+            
             # refine every block in the partition with the current depth splitters
-            for B in current_depth_splitters:
-                # skip blocks that have become empty by previous splitters 
-                if B.elements.size == 0:
-                    continue
+            for B_elements in kdepth_splitters:
+                # split Q by splitter if not empty
+                if B_elements:
+                    Q_k = self.fastsplit_k(B_elements, Q_k)       
+            
+            # if no size change fixpoint has been reached 
+            if size_before == Q_k.size:
+                return Q_k
 
-                # split Q using current splitter 
-                Q = self.fastsplit_k(B, Q)
-
-        return Q
+        return Q_k
 
     def extract_states(self, Q_final):
         """

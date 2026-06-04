@@ -1,4 +1,4 @@
-from bisim import BiSimulatMini
+from bisim import BiSimMini
 
 # testing PT algorithm
 class MockModel:
@@ -105,7 +105,7 @@ def run_reduction_test(test_model):
     model = test_model
     
     # feed mock model to bisimulation class
-    minimizer = BiSimulatMini(model)
+    minimizer = BiSimMini(model)
     
     print("--- Executing Paige-Tarjan Reduction Engine ---")
     try:
