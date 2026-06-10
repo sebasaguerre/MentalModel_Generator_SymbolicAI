@@ -21,7 +21,7 @@ class Node:
         # assign new dll and insert node
         # self.parent_dll = new_dll 
         return new_dll.insert(self, node=True)
-
+    
 class DLL:
     """
     Double link lists data structure
@@ -136,12 +136,12 @@ class Edge:
     
 # extended architecture for labeld edges 
 
-class labeldState(State):
+class LabeledState(State):
     def __init__(self, id):
         super().__init__(id)
-        self.preimage = {}              # map: {action/label: [LabeldEdges]}
+        self.preimage = defaultdict(list)              # map: {action/label: [LabeldEdges]}
 
-class labeldEdge(State):
+class LabeledEdge(Edge):
     __slots__ = ["label"]
     
     def __init__(self, source, label):
@@ -189,21 +189,62 @@ class BiSimMini:
     Doing BiSimulation Minimization through Paige Tarjan Algorithm
     followed by quotient construction
     """
-    def __init__(self, model):
+    def __init__(self, model, multi_edges):
         self.states = model.states
         self.edges = model.relations
         self.premap = model.rev_relations
         self.labels = model.labels
-        self.multiedges = model.multiedges 
+        self.multi_edges = multi_edges
+
+        # set up engine for correct edge type
+        self._setup_for_edges(multi_edges)
+
+    def _setup_for_edges(self, multi_edges):
+        """
+        Setup correct methods depending on edge type 
+        """
+
+        if multi_edges:
+            self.record_builder = self._record_builder_multi
+            self.fastsplit_k = self._fastsplit_k_multi
+            self.refinement = self._refinment_multi
+            self.quotient_construction = self._quotient_construction_multi
+        else:
+            self.record_builder = self._record_builder_simple
+            self.fastsplit_k = self._fastsplit_k_simple
+            self.refinement = self._refinement_simple 
+
+    def _record_builder_multi(self):
+        "Record builder when dealing with multi/labeled edges"
+
+        # init states with proper label 
+        self.state_to_record = {s: LabeledState(s) for s in self.states}
+
+        # initial counter record 
+        counter_map = {(state, action) : Counter(len(self.edges[state][action])) for state in self.states 
+                       for action in self.edges[state].keys()}
+
+        for target_state, action_map in self.premap.items():
+
+            # get target record
+            target_record = self.state_to_record[target_state]
+
+            for action, pre_states in action_map.items():
+                for source_state in pre_states:
+                    #extract source record
+                    source_record = self.state_to_record[source_state]
+                    # create edge and add it to pre_image 
+                    edge = LabeledEdge(source_record, action)
+                    edge.count = counter_map[(source_state, action)]
+                    target_record.preimage[action].append(edge)            
     
-    def record_builder(self):
+    def _record_builder_simple(self):
 
-        self.records = {"states": [], "edges": []}
+        # self.records = {"states": None }
 
-        # NOTE: # we can make this efficient to recicle states, by checking if the entry exists
         # state to record map:
-        state_to_record = {s: State(s) for s in self.states}
-        self.records["states"] = state_to_record
+        self.state_to_record = {s: State(s) for s in self.states}
+        # self.records["states"] = state_to_record
 
         # couter map: init count record count(x, U) for edge
         intcounter_map = {s : Counter(len(self.edges[s])) for s in self.states} 
@@ -212,22 +253,21 @@ class BiSimMini:
         # iterate over premap
         for target_state, pre_states in self.premap.items():
             # get target record 
-            target_record = state_to_record[target_state]
+            target_record = self.state_to_record[target_state]
 
             # loop over pre_states
             for source_state in pre_states:
                 # create edge for target_record 
-                source_record = state_to_record[source_state]
+                source_record = self.state_to_record[source_state]
                 edge = Edge(source_record)
 
                 # assign initial counter for all edges
                 edge.count = intcounter_map[source_state]
-                
                 # add edge to taget preimage
                 target_record.preimage.append(edge)
 
-                # add edges to record file 
-                self.records["edges"].append(edge)
+                # # add edges to record file 
+                # self.records["edges"].append(edge)
 
     def partition0(self):
         """
@@ -243,7 +283,7 @@ class BiSimMini:
             # generate signature per state -> set of labels 
             signature = tuple(sorted(labels))
             # get state record 
-            state_record = self.records["states"][state]
+            state_record = self.state_to_record[state]
             # group state records
             groups[signature].append(state_record)
 
@@ -381,11 +421,11 @@ class BiSimMini:
                         X.remove(s)
                         X.extend([B, S - B])
 
-                        # return splitter 
-                        return S, B
+        # return splitter 
+        return S, B
                     
      # Block form X
-                    
+          
     def fastsplit(self, preB, Q):
         """
         Fast splitting utilizing pointers
@@ -437,7 +477,10 @@ class BiSimMini:
 
         return Q
 
-    def refinement(self, X, Q):
+    def _refinement_simple(self, X, Q):
+        """
+        fastPT partition refinment using the "smaller half" rule for simple edges 
+        """
 
         # Step 1: selecting refinment block
         # get splitter and examin first two subblocks
@@ -525,36 +568,13 @@ class BiSimMini:
                     edge.count = xcountB
             
         return X, Q
-
-    def _fPTalgo(self):
-        """
-        The fast implementation of the PT algorithm.
-        This requires to keep a second partion X which we use to aid refinement
-        and the use or records for states, edges and blocks
-        """
-
-        # generate records
-        self.record_builder()
-        
-        # initalize partition based on labels
-        Q = self.partition0()          # "fine" partition 
-
-        # this is the "coarse" partition and the compound blocks
-        X = self.inti_X(Q)                                            # starts as the entire set of states 
-        self.worklist.insert(X.head)                                  # U is compound so it goes to the worklist             
-
-        S, B = self.findspliter(X, Q)  # the spliter is S - B st  S and B meet the conditions required 
-
-        # iterative partition refinment 
-        while self.worklist.size > 0:
-            
-            # refinment step 
-            P = self.split(B, P)
-            P = self.split(S - B, P)
-            S, B = self.findsplitter(X, P)
-
-        return P 
     
+    def fastsplit_multi(self, preB, Q):
+        pass
+
+    def _refinment_multi(self, X, Q):
+        pass
+          
     def fastPTalgo(self):
         """
         The fast implementation of the PT algorithm.
@@ -582,32 +602,18 @@ class BiSimMini:
 
         return Q
     
-    def fastsplit_k(self, B_elements, Q):
+    def _split_by_preimage(self, preimage_B, Q):
         """
-        Fast splitting using pointers for k-depth bisimulation.
-
-        Two-pass design is deliberate:
-          Pass 1 — collect the full preimage of B into a set BEFORE any moves.
-                   The set deduplicates: a state x that reaches multiple y in B
-                   must only be moved once, to the Dprime of its *original* block.
-                   Collecting first also keeps B.elements unmodified during
-                   traversal, preventing iterator corruption when preimage states
-                   happen to be inside B itself (back-edges / self-loops).
-          Pass 2 — move each preimage state exactly once using its current
-                   (= original, since no moves happened yet) block_q.
+        Fast splitting using pointers for k-depth bisimulation
+        Single-relation split: split every block by membership in a
+        precomputed preimage set. Action-agnostic.
         """
 
         associated = {}        # maps original block D -> its split-off Dprime
         split_blocks = set()   # tracks which original blocks were touched
 
-        # collect preimage of B without touching block assignments
-        preimage_of_B = dict()
-        for elem in B_elements:
-            for edge in elem.preimage:
-                preimage_of_B[edge.source] = None
-
         # move each preimage state exactly once to Dprime(original block)
-        for x_state in preimage_of_B.keys():
+        for x_state in preimage_B:
             D = x_state.block_q
             if D not in associated:
                 Dprime = SmallB()
@@ -628,6 +634,32 @@ class BiSimMini:
 
         return Q
     
+    def _fastsplit_k_simple(self, B_elements, Q):
+
+        # get preimgae from elements of B
+        preimage_B = {edge.source: None for elem in B_elements for edge in elem.preimage}
+        return self._split_by_preimage(preimage_B, Q)
+
+    
+    def _fastsplit_k_multi(self, B_elements, Q):
+        """
+        Labeled k-depth split: refine Q by B per action label.
+        Each action is processed as a complete independent refinment pass.
+        """
+
+        # extract preimage of B per action (dedup states within each action)
+        preimage_by_action = defaultdict(dict)
+        for elem in B_elements:
+            for action, edges in elem.preimage.items():
+                for edge in edges:
+                    preimage_by_action[action][edge.source] = None
+
+        # one complete split pass per action; composition = signature refinement
+        for states in preimage_by_action.values():
+            Q = self._split_by_preimage(states, Q)
+
+        return Q
+
     def k_depth_refinment(self, k):
         """
         Partition refinment to a depth of k
@@ -715,9 +747,9 @@ class BiSimMini:
 
         return macro_states, mapping, bisim_states
 
-    def quotient_construction(self, Q_final):
+    def _quotient_construction_simple(self, Q_final):
         """
-        Using the newly refined partition find its quotient model
+        Create quotient model with simple edges from coarse partition 
         """
        
         # new quotient model 
@@ -741,6 +773,31 @@ class BiSimMini:
                 for target in group_relations:
                     quotient_relations[macro_state].add(mapping[target])
 
+        return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
+
+    def _quotient_construction_multi(self, Q_final):
+
+
+        # new quotient model 
+        macro_states, mapping, bisim_states = self.extract_states(Q_final)
+        quotient_relations = {x_id: defaultdict(set) for x_id in macro_states}
+        quotient_labels = dict()
+
+        for org_state, macro_state in mapping.items():
+
+            # go through macro states once
+            if macro_state not in quotient_labels:
+                
+                # assign macro labels and extract relations
+                quotient_labels[macro_state] = self.labels[org_state]
+                group_relations = self.edges[org_state]
+                
+                # iterate over labeld edges (each action maps to a set of targets)
+                for action, targets in group_relations.items():
+                    for target in targets:
+                        quotient_relations[macro_state][action].add(mapping[target])
+        
+        # return quotient model
         return macro_states, quotient_relations, quotient_labels, mapping, bisim_states
     
     def bisim(self, maps=False):

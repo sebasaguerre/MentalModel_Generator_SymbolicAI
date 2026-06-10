@@ -1,17 +1,14 @@
-import os
-import re
-import types
-import tempfile
 import numpy as np
 import networkx as nx
 from graphviz import Digraph
 import matplotlib.pyplot as plt
 from bisim import BiSimMini
+import os, types, tempfile, textwrap
 from collections import defaultdict, deque
 
 
 class ModelStructure:
-    def __init__(self, n_action, labelling_function=None, multiedges=False, complex_labels=True,
+    def __init__(self, n_action, labelling_function=None, multi_edges=False, complex_labels=True,
                  zones=None, zone_radious=None):
         """
         Arguments:
@@ -21,19 +18,14 @@ class ModelStructure:
         """
         # structure attributes
         self.states = set()
-        if multiedges:
-            self.relations = defaultdict(dict)       # {state : {action1: [next1,... ], act2: [next1, ...], ...} 
-            self.rev_relations = defaultdict(dict)
-        else:
-            self.relations = defaultdict(set)
-            self.rev_relations = defaultdict(set)    # pre image function for bisimulation
         self.labels = defaultdict(set)
-        # self.maps = maps
+        # set up depending on edges 
+        self.init_setup_for_edges(multi_edges)
 
         # building attributes 
         self.complex_labels = complex_labels
         self.n_action = n_action
-        self.multiedges = multiedges 
+        self.multi_edges = multi_edges
 
         # cset zones depending on instantiation
         if zones is not None:
@@ -50,7 +42,18 @@ class ModelStructure:
         if labelling_function:
             self.add_labels = types.MethodType(labelling_function, self)   # same as labellinf_function.__get__(self, ModelStructure)
 
+    def init_setup_for_edges(self, multi_edges):
+        "Initialize class with prper structure according to edge type"
 
+        if multi_edges:
+            self.relations = defaultdict(lambda : defaultdict(set))       # {state : {action1: [next1,... ], act2: [next1, ...], ...} 
+            self.rev_relations = defaultdict(lambda : defaultdict(set))
+            self.generate_structure = self._generate_structure_multi_edge 
+        else:
+            self.relations = defaultdict(set)
+            self.rev_relations = defaultdict(set)    # pre image function for bisimulation
+            self.generate_structure = self._generate_structure_simple_edge
+            
     def within_radious_dfs(self, state, label, max_steps):
 
         # baseline success: label found at current state 
@@ -73,9 +76,15 @@ class ModelStructure:
             # check if we can do further searching 
             if current_depth >= max_steps:
                 continue
+            
+            # adaptation for dealing with edge type 
+            if self.multi_edges:
+                successors = set().union(*self.relations[current_state].values())
+            else:
+                successors = self.relations[current_state]
 
             # look at all successors of the current state 
-            for next_s in self.relations[current_state]:
+            for next_s in successors:
                 if next_s not in visited:
                     # check if label is true at state 
                     if label in self.labels[next_s]:
@@ -88,8 +97,37 @@ class ModelStructure:
         # label not found within radious 
         return False
     
+    def retrieve_neighborhood(self, states, max_steps):
 
-    def generate_labels(self):
+        # state nighboorhood 
+        neighbourhood = set()
+        to_visit = deque()
+        visited = set(states)
+
+        # extract base level states
+        for s in states:    
+            to_visit.append((s, 0))
+
+        # traverse level by level 
+        while to_visit:
+            current_state, current_depth = to_visit.popleft()
+            
+            if self.multi_edges:
+                successors = set().union(self.relations[current_state].values())
+            else:
+                successors = self.relations[current_state]
+            
+            for next_s in successors:
+                # save neighbout and store for further search
+                if next_s not in visited:
+                    visited.add(next_s)
+                    neighbourhood.add(next_s)
+                    if current_depth + 1 < max_steps:
+                        to_visit.append((next_s, current_depth + 1))
+        
+        return neighbourhood
+    
+    def generate_labels(self, data: list[tuple]):
         """
         Generate higher order labels lables that change dynamically.
         Labels like: 
@@ -97,8 +135,11 @@ class ModelStructure:
             - Proximity to goal 
             - Proximity to terminal states 
         """
-            
-        for s in self.states:
+        # extract neighbours of recently visited states 
+        recent_states = [state for xp in data for state in (xp[0], xp[2])] 
+        neighbours = self.retrieve_neighborhood(recent_states, self.zone_radious)
+
+        for s in neighbours:
 
             # TODO: this needs to be adapted to multi-edges 
             s_labels = self.labels[s]
@@ -129,28 +170,26 @@ class ModelStructure:
                     if zone not in self.labels[s]:
                         if self.within_radious_dfs(s, label, self.zone_radious):
                             self.labels[s].add(zone)
-
                 
     def add_labels(self, s, action, next_s, reward, done):
-
-        # add bound 
+        "Envir. labels. Based on experiments, the labeller(tested) with highest compression rate"
+         # add bounds
         if s == next_s:
-                self.labels[s].add("bound")
-                    
-        # add action at current state 
-        self.labels[s].add(f"a{action}")
+            self.labels[s].add("bounded")
 
-        # labels at future state 
-        self.labels[next_s].add(f"r_{reward}")
-        
+        # label terminal states 
         if done:
             # create gaol label
             if reward > 0:
                 self.labels[next_s].add("Goal")
             else:
                 self.labels[next_s].add("TS")
+        # label non terminal states
+        else:
+            self.labels[s].add("NTS")
+            self.labels[next_s].add("NTS")
             
-    def generate_structure(self, data: list[tuple]):
+    def _generate_structure_simple_edge(self, data: list[tuple]):
         
         # extract structural values 
         for s, action, next_s, reward, done  in data:
@@ -166,6 +205,27 @@ class ModelStructure:
             if done:
                 self.relations[next_s]        # or assign the empty set 
     
+    def _generate_structure_multi_edge(self, data:list[tuple]):
+
+        # extract structural values 
+        for s, action, next_s, reward, done in data:
+
+            self.states.add(s)
+            self.states.add(next_s)
+
+            # normalizing action string
+            action_label = f"a{action}"
+
+            self.relations[s][action_label].add(next_s)      
+            self.rev_relations[next_s][action_label].add(s)        
+
+            # add labels 
+            self.add_labels(s, action, next_s, reward, done)
+
+            # if reached state is terminal assign empty dict => no actions
+            if done:
+                self.relations[next_s] = {}
+    
     def generate(self, data: list[tuple]):
         # generate structure and basic labels
         self.generate_structure(data)
@@ -174,7 +234,8 @@ class ModelStructure:
         if self.complex_labels:
             self.generate_labels()
 
-    def visualize(self):
+    def _visualize(self):
+        "Visualize Kripke model using boxes"
 
         # initialize with better layout attributes
         dot = Digraph(node_attr={
@@ -208,7 +269,80 @@ class ModelStructure:
         
         # display graph (SVG is often sharper than PNG)
         dot.render(view=True, format="svg")
+    
+    def visualize(self):
 
+        # Initialize graph with a clean font
+        dot = Digraph(node_attr={
+            'fontname': 'Helvetica,Arial,sans-serif',
+            'fontsize': '10',
+            'style': 'filled',
+            'fillcolor': '#fcfcfc',
+            'fixedsize': 'shape',
+            'width': '1.2',
+            'height': '1.2'
+            
+        })
+        
+        # Title and compact layout configuration
+        # dot.attr(label="Kripke Model Semantics", labelloc="t", fontsize="14", fontname="Helvetica-Bold")
+        dot.attr(nodesep='0.6', ranksep='0.8', rankdir="LR")
+        dot.attr(size='10,6!', ratio='compress')
+
+        # Add nodes based on their structural properties
+        for s, props in self.labels.items():
+            node_id = str(s)
+            
+            # Format the label nicely using standard newlines
+            # Format: State ID on top, propositions inside brackets underneath
+            prop_inline = ", ".join(props)
+            prop_str = f"{{{textwrap.fill(prop_inline, width=10)}}}"
+            standard_label = f"{node_id}\n{prop_str}"
+            
+            # Determine if the state is terminal (dead-end)
+            # It's terminal if it has no outgoing relations or its relation list is empty
+            
+            is_terminal = s not in self.relations or not self.relations[s]
+            
+            if is_terminal:
+                # Terminal states = Square (box)
+                dot.node(node_id, label=standard_label, shape='box', color='#d9534f', penwidth='2')
+            else:
+                # Normal states = Circle
+                dot.node(node_id, label=standard_label, shape='circle', color='#4a4a4a')
+
+        # Optimize edge creation using a generator expression
+        if not self.multi_edges:
+            edges = (
+                    (str(s), str(next_s)) 
+                    for s, next_states in self.relations.items() 
+                    for next_s in next_states
+                )
+            dot.edges(edges)
+        else:
+            for s, actions in self.relations.items():
+                for action, next_states in actions.items():
+                    for next_s in next_states:
+                        # We must call this individually because 'label=str(action)' 
+                        # changes dynamically for every single transition.
+                        dot.edge(str(s), str(next_s), label=str(action))
+        
+
+        # Clean global edge styling
+        dot.edge_attr.update(color="#4a4a4a", arrowhead="vee", arrowsize="1.0")
+
+        # Render to a temporary file instead of the local directory
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".gv") as temp_gv:
+            temp_base = temp_gv.name
+
+        # dot.render creates 'temp_base.svg' and opens it
+        dot.render(temp_base, view=True, format="svg")
+    
+        # Cleanup the temporary source file immediately
+        try:
+            os.remove(temp_base)
+        except OSError:
+            pass
 
 class CompressedModel:
     def __init__(self, states, relations, labels, mapping, bisim_states):
@@ -223,11 +357,11 @@ class KripkeMM:
     """
     Wrapper class that bring all of the components together 
     """
-    def __init__(self, **kwargs):
-        self.struct = ModelStructure(**kwargs)                      # underlying structure 
-        self.compressor = BiSimMini(self.struct)                    # compresion engine 
-        self.contex_generator = None                                # formula generator on basis of model
-        self.abst = None                                            # learned compressed model 
+    def __init__(self, multi_edges=False, **kwargs):
+        self.struct = ModelStructure(multi_edges=multi_edges, **kwargs)         # underlying structure 
+        self.compressor = BiSimMini(self.struct, multi_edges=multi_edges)       # compresion engine 
+        self.contex_generator = None                                            # formula generator on basis of model
+        self.abst = None                                                        # learned compressed model 
     
     def one_step_props(self, state):
         # get all the one step future proposition
@@ -312,58 +446,59 @@ class KripkeMM:
             bisim_states=bisim_states
         )
 
-# class wrapper to compare Bisim vs k-Bisim compresison 
-class KMMcompare(KripkeMM):
+# # class wrapper to compare Bisim vs k-Bisim compresison 
+# class KMMcompare(KripkeMM):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # init abst_k
-        self.abst_k = None
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         # init abst_k
+#         self.abst_k = None
 
-    def generate_model(self, k=None):
+#     def generate_model(self, k=None):
 
-        # check if k is used and generate new compressde model while saving other model
-        if k is not None:
+#         # check if k is used and generate new compressde model while saving other model
+#         if k is not None:
 
-            # store self.abst befroe parent overrite 
-            model_backup = getattr(self, 'abst', None)
+#             # store self.abst befroe parent overrite 
+#             model_backup = getattr(self, 'abst', None)
 
-            # overwrite self.abst
-            super().generate_model(k=k)
+#             # overwrite self.abst
+#             super().generate_model(k=k)
 
-            # migrate k_model 
-            self.abst_k = self.abst 
+#             # migrate k_model 
+#             self.abst_k = self.abst 
 
-            # restore original model 
-            self.abst = model_backup 
+#             # restore original model 
+#             self.abst = model_backup 
 
-        else:
-            super().generate_model(k=k)
+#         else:
+#             super().generate_model(k=k)
 
-    def update_structure(self, data):
-         self.struct.generate(data)
+#     def update_structure(self, data):
+#          self.struct.generate(data)
 
 
 class KMMcompare(KripkeMM):
     """Current adjusted version to account for possible 4*4 comparion"""
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, compare, multi_edges=False, **kwargs):
+        super().__init__(multi_edges=multi_edges, **kwargs)
         # init abst_k
         self.abst_k = None
         self.complex_labels = kwargs.get("complex_labels")
         self.simple_abst = None
         self.simple_abst_k = None
+        self.compare = compare
 
         # if comparing with complex lables 
-        if self.complex_labels:
+        if self.complex_labels and self.compare:
             # init proper attributes for comparison
             # self.simple_abst = None
             # self.simple_abst_k = None
             # initialize simple structure and its compressor
             kwargs["complex_labels"] = False
-            self.simple_struct = ModelStructure(**kwargs)
-            self.simple_compressor = BiSimMini(self.simple_struct)
+            self.simple_struct = ModelStructure(multi_edges=multi_edges, **kwargs)
+            self.simple_compressor = BiSimMini(self.simple_struct, multi_edges=multi_edges)
 
     def _compress(self, compressor, k=None):
         # generate abstract state with standard bisim of k-bisim
@@ -401,5 +536,5 @@ class KMMcompare(KripkeMM):
 
         self.struct.generate(data)
         # update structures 
-        if self.complex_labels:
+        if self.complex_labels and self.compare:
             self.simple_struct.generate(data)

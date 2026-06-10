@@ -188,13 +188,15 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
     e_lengths = []
     struct_size = []
     data_type = (lambda: {"simple": [], "complex": []} ) if complex_labels else list 
-    meta_size = {"bisim": data_type()} if not compare else {"bisim": data_type(), "k_bisim" : data_type()}
+
+    # aids for collecting data and visualization dynamically 
+    compressor, labels = "k_bisim" if kwargs.get("k") else "bisim", "complex" if complex_labels else "simple"
+    meta_size = {compressor: data_type()} if not compare else {"bisim": data_type(), "k_bisim" : data_type()}
     model_map = {"bisim" : {"simple":"simple_abst", "complex": "abst"},
             "k_bisim": {"simple":"simple_abst_k", "complex": "abst_k"}}
 
     if render:
         print("\nExperiment starts")
-
 
     # collect data for n epoch
     for i in range(1, epochs + 1):
@@ -221,7 +223,6 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
                 time.sleep(1)
 
             # generate mental model incrementally
-
             model.update_structure([xp])
 
             # end epoch if agend reaches terminal state 
@@ -231,7 +232,11 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
         # display current kripke structure 
         if visualize:
             print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
+            print(model.struct.states)
+            print(model.struct.labels)
+            print(model.struct.relations)
             model.struct.visualize()
+
             input()
 
         # generate abstract model 
@@ -240,16 +245,17 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
             model.generate_model(**kwargs)
             
             if visualize:
-                print(f"Compressed model at iter {i}, total nodes in structure: {len(model.struct.states)}")
+                print(f"Compressed model iter {i}. Nodes in structure: {len(model.struct.states)}")
                 
                 if compare and getattr(model, "simple_abst_k", None):
-                    print(f"Standard Bisimulation ({len(getattr(model, "simple_abst").states)} states)")
+                    print(f"Bisim: ({len(getattr(model, model_map["bisim"][labels]).states)} states)")
                     model.visualize(model.abst, title="Bisim")
                     input()
-                    print(f"Visualizing k-Bisimulation({len(model.abst_k.states)} states)")
+                    print(f"k-Bisim: ({len(getattr(model, model_map["k_bisim"][labels]).states)} states)")
                     model.visualize(model.abst_k, title="k-Bisim")
                 else:
-                    model.visualize(model.abst)
+                    print(f"{compressor.capitalize()}: {len(getattr(model, model_map[compressor][labels]))} states")
+                    model.visualize(getattr(model, model_map[compressor][labels]))
                 
                 # give time to view generated models
                 input()
@@ -282,47 +288,62 @@ def main():
     # inti env
     env = GridWorld(6, 3)
 
-    # experiment info
-    n = int(input("Number of epochs? "))
-   
-    if input("Exp. details? ").lower().strip() == "y":
-        # render = input("Render experiment (y/n)? ").lower().strip() == "y"
+    if input("Set up exp? ").lower().strip() == "y":
+        # experiment info
+        n = int(input("Number of epochs? "))
+    
+        if input("Exp. details? ").lower().strip() == "y":
+            # render = input("Render experiment (y/n)? ").lower().strip() == "y"
 
-        # display GW env
-        view_env = input("Display GW env. (beggining state)? ").lower().strip() == "y"
-        visualize = input("Visuaize model? ").lower().strip() == "y"
-    
-    else: 
-        render, view_env, visualize = False, False, False
-    
-    #compare models 
-    compare = input("Compare models? ").lower().strip() == "y"
-    
-    # select model details 
-    if input("Select model parameters? ").lower().strip() == "y":
-        k = input("Choose k-depth (yes=int, no=no): ").strip()
-        k = int(k) if k.isnumeric() else None
-        complex_labels = input("Complex labels? ").lower().strip() == "y"
-        if complex_labels:
-            zone_radious = int(input("Zone radious: ").strip())
-        else:
-            zone_radious = None
+            # display GW env
+            view_env = input("Display GW env. (beggining state)? ").lower().strip() == "y"
+            visualize = input("Visuaize model? ").lower().strip() == "y"
         
-    else:
-        k = None
-        zone_radious = None
-        complex_labels = False
-    
-    # init model
-    model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
-    # if compare:
-    #     model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
-    # else:
-    #     model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
+        else: 
+            render, view_env, visualize = False, False, False
+        
+        #compare models 
+        compare = input("Compare models? ").lower().strip() == "y"
+        
+        # select model details 
+        if input("Select model parameters? ").lower().strip() == "y":
+            k = input("Choose k-depth (yes=int, no=no): ").strip()
+            k = int(k) if k.isnumeric() else None
+            multi_edges = input("Multi edges? ").lower().strip() == "y"
+            complex_labels = input("Complex labels? ").lower().strip() == "y"
+            if complex_labels:
+                zone_radious = int(input("Zone radious: ").strip())
+            else:
+                zone_radious = None
+            
+        else:
+            k = None
+            zone_radious = None
+            complex_labels = False
+            multi_edges = False
+        
+        # init model
+        model = KMMcompare(compare=compare, n_action=len(env.actions), complex_labels=complex_labels, 
+                        multi_edges=multi_edges, zone_radious=zone_radious)
+        # if compare:
+        #     model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
+        # else:
+        #     model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
 
-    # run experiment 
-    experiment(env, model, n, visualize=visualize, render=False, view_env=view_env,
-                compare=compare, complex_labels=complex_labels, k=k)
+        # run experiment 
+        experiment(env, model, n, visualize=visualize, render=False, view_env=view_env,
+                    compare=compare, complex_labels=complex_labels, k=k)
+    
+    # basic simple testing 
+    else:
+
+        model = KMMcompare(compare=False, n_action=len(env.actions), complex_labels=True, 
+                        multi_edges=True, zone_radious=None)
+        # model = KripkeMM(multi_edges=True, n_action=len(env.actions), 
+        #                  complex_labels=True, zone_radious=None)
+
+        experiment(env, model, 10, visualize=True, render=False, view_env=False,
+                compare=False, complex_labels=True, k=None)
 
 # program execution 
 if __name__ == "__main__":
