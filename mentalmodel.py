@@ -113,7 +113,7 @@ class ModelStructure:
             current_state, current_depth = to_visit.popleft()
             
             if self.multi_edges:
-                successors = set().union(self.relations[current_state].values())
+                successors = set().union(*self.relations[current_state].values())
             else:
                 successors = self.relations[current_state]
             
@@ -141,15 +141,14 @@ class ModelStructure:
 
         for s in neighbours:
 
-            # TODO: this needs to be adapted to multi-edges 
+            
             s_labels = self.labels[s]
 
             bounds = any(label == "bound" for label in s_labels)
             terminal = any(label in ["TS", "Goal"] for label in s_labels)
             
-            act_exp=  sum(1 for elem in s_labels if elem.startswith("a")) / (self.n_action - bounds) 
-
-            # entropy level of state 
+           # compute proportion of actions explored 
+            act_exp = len(self.relations[s]) / self.n_action
             entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
 
             # add dynamic entropy label and zones-labels 
@@ -232,7 +231,7 @@ class ModelStructure:
 
         # labeling function: add complex labels 
         if self.complex_labels:
-            self.generate_labels()
+            self.generate_labels(data)
 
     def _visualize(self):
         "Visualize Kripke model using boxes"
@@ -372,56 +371,134 @@ class KripkeMM:
         
         return future_props
     
+    # def visualize(self, model, title=None):
+
+    #     # initialize with better layout attributes
+    #     dot = Digraph(node_attr={
+    #         'shape': 'padded_box', # Custom style via HTML or rounded
+    #         'fontname': 'Helvetica,Arial,sans-serif',
+    #         'fontsize': '12'
+    #     })
+
+    #     # add title if given 
+    #     if title:
+    #         dot.attr(label=title, labelloc="t", fontsize="16", fontname="Helvetica-Bold")
+        
+    #     # increase spacing between nodes and layers to reduce clutter
+    #     dot.attr(nodesep='0.6', ranksep='0.6', rankdir="LR")
+    #     dot.attr(size='10,6!', ratio='compress')                 # give a more zoomed out graph
+
+    #     # add nodes with clean HTML formatting
+    #     for s, props in model.labels.items():
+    #         node_id = str(s)
+    #         prop_str = ", ".join(map(str, props)) if props else "Ø"
+            
+    #         # Stripped whitespace from HTML string to reduce string processing overhead
+    #         html_label = (
+    #             f'<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" STYLE="ROUNDED">'
+    #             f'<TR><TD BGCOLOR="#EAEAEA"><B>{node_id}</B></TD></TR>'
+    #             f'<TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">{prop_str}</FONT></TD></TR>'
+    #             f'</TABLE>>'
+    #         )
+    #         dot.node(node_id, label=html_label, shape='none')
+
+    #     # optimize edge creation
+    #     # using dot.edges() with a generator expression is much faster than nested loops
+    #     edges = (
+    #         (str(s), str(next_s)) 
+    #         for s, next_states in model.relations.items() 
+    #         for next_s in next_states
+    #     )
+    #     dot.edges(edges)
+
+    #     # apply edge styling globally to the graph instead of per-edge to save memory
+    #     dot.edge_attr.update(color="#4a4a4a", arrowhead="vee")
+
+
+    #     # create temporary file path that diappears later
+    #     with tempfile.NamedTemporaryFile(delete=False, suffix=".gv") as temp_file:
+    #         temp_base = temp_file.name
+
+    #     # display graph and clean up immediately
+    #     dot.render(temp_base, view=True, format="svg")
+    #     try:
+    #         os.remove(temp_base)
+    #     except OSError:
+    #         pass
+    
     def visualize(self, model, title=None):
+        """
+        Visualizer of model, adapted to work for single and multi edges
+        """
 
-        # initialize with better layout attributes
+        # Initialize graph with a clean font
         dot = Digraph(node_attr={
-            'shape': 'padded_box', # Custom style via HTML or rounded
             'fontname': 'Helvetica,Arial,sans-serif',
-            'fontsize': '12'
+            'fontsize': '10',
+            'style': 'filled',
+            'fillcolor': '#fcfcfc',
+            'fixedsize': 'shape',
+            'width': '1.2',
+            'height': '1.2'
+            
         })
-
+        
         # add title if given 
         if title:
-            dot.attr(label=title, labelloc="t", fontsize="16", fontname="Helvetica-Bold")
-        
-        # increase spacing between nodes and layers to reduce clutter
-        dot.attr(nodesep='0.6', ranksep='0.6', rankdir="LR")
-        dot.attr(size='10,6!', ratio='compress')                 # give a more zoomed out graph
+            dot.attr(label=title, labelloc="t", fontsize="14", fontname="Helvetica-Bold")
+        dot.attr(nodesep='0.6', ranksep='0.8', rankdir="LR")
+        dot.attr(size='10,6!', ratio='compress')
 
-        # add nodes with clean HTML formatting
+        # Add nodes based on their structural properties
         for s, props in model.labels.items():
             node_id = str(s)
-            prop_str = ", ".join(map(str, props)) if props else "Ø"
             
-            # Stripped whitespace from HTML string to reduce string processing overhead
-            html_label = (
-                f'<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" STYLE="ROUNDED">'
-                f'<TR><TD BGCOLOR="#EAEAEA"><B>{node_id}</B></TD></TR>'
-                f'<TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">{prop_str}</FONT></TD></TR>'
-                f'</TABLE>>'
-            )
-            dot.node(node_id, label=html_label, shape='none')
+            # Format the label nicely using standard newlines
+            # Format: State ID on top, propositions inside brackets underneath
+            prop_inline = ", ".join(props)
+            prop_str = f"{{{textwrap.fill(prop_inline, width=10)}}}"
+            standard_label = f"{node_id}\n{prop_str}"
+            
+            # Determine if the state is terminal (dead-end)
+            # It's terminal if it has no outgoing relations or its relation list is empty
+            
+            is_terminal = s not in model.relations or not model.relations[s]
+            
+            if is_terminal:
+                # Terminal states = Square (box)
+                dot.node(node_id, label=standard_label, shape='box', color='#d9534f', penwidth='2')
+            else:
+                # Normal states = Circle
+                dot.node(node_id, label=standard_label, shape='circle', color='#4a4a4a')
 
-        # optimize edge creation
-        # using dot.edges() with a generator expression is much faster than nested loops
-        edges = (
-            (str(s), str(next_s)) 
-            for s, next_states in model.relations.items() 
-            for next_s in next_states
-        )
-        dot.edges(edges)
+        # Optimize edge creation using a generator expression
+        if not self.struct.multi_edges:
+            edges = (
+                    (str(s), str(next_s)) 
+                    for s, next_states in model.relations.items() 
+                    for next_s in next_states
+                )
+            dot.edges(edges)
+        else:
+            for s, actions in model.relations.items():
+                for action, next_states in actions.items():
+                    for next_s in next_states:
+                        # We must call this individually because 'label=str(action)' 
+                        # changes dynamically for every single transition.
+                        dot.edge(str(s), str(next_s), label=str(action))
+        
 
-        # apply edge styling globally to the graph instead of per-edge to save memory
-        dot.edge_attr.update(color="#4a4a4a", arrowhead="vee")
+        # Clean global edge styling
+        dot.edge_attr.update(color="#4a4a4a", arrowhead="vee", arrowsize="1.0")
 
+        # Render to a temporary file instead of the local directory
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".gv") as temp_gv:
+            temp_base = temp_gv.name
 
-        # create temporary file path that diappears later
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".gv") as temp_file:
-            temp_base = temp_file.name
-
-        # display graph and clean up immediately
+        # dot.render creates 'temp_base.svg' and opens it
         dot.render(temp_base, view=True, format="svg")
+    
+        # Cleanup the temporary source file immediately
         try:
             os.remove(temp_base)
         except OSError:
@@ -446,55 +523,23 @@ class KripkeMM:
             bisim_states=bisim_states
         )
 
-# # class wrapper to compare Bisim vs k-Bisim compresison 
-# class KMMcompare(KripkeMM):
-
-#     def __init__(self, **kwargs):
-#         super().__init__(**kwargs)
-#         # init abst_k
-#         self.abst_k = None
-
-#     def generate_model(self, k=None):
-
-#         # check if k is used and generate new compressde model while saving other model
-#         if k is not None:
-
-#             # store self.abst befroe parent overrite 
-#             model_backup = getattr(self, 'abst', None)
-
-#             # overwrite self.abst
-#             super().generate_model(k=k)
-
-#             # migrate k_model 
-#             self.abst_k = self.abst 
-
-#             # restore original model 
-#             self.abst = model_backup 
-
-#         else:
-#             super().generate_model(k=k)
-
-#     def update_structure(self, data):
-#          self.struct.generate(data)
-
-
 class KMMcompare(KripkeMM):
     """Current adjusted version to account for possible 4*4 comparion"""
 
-    def __init__(self, compare, multi_edges=False, **kwargs):
+    def __init__(self, compare_models, compare_struct, multi_edges=False, **kwargs):
         super().__init__(multi_edges=multi_edges, **kwargs)
         # init abst_k
         self.abst_k = None
         self.complex_labels = kwargs.get("complex_labels")
         self.simple_abst = None
         self.simple_abst_k = None
-        self.compare = compare
+        self.compare_struct = compare_struct
+
+        # set up model generator 
+        self.generate_model = self._generate_model_compare if compare_models else self._generate_model_single_model
 
         # if comparing with complex lables 
-        if self.complex_labels and self.compare:
-            # init proper attributes for comparison
-            # self.simple_abst = None
-            # self.simple_abst_k = None
+        if self.compare_struct:
             # initialize simple structure and its compressor
             kwargs["complex_labels"] = False
             self.simple_struct = ModelStructure(multi_edges=multi_edges, **kwargs)
@@ -516,25 +561,43 @@ class KMMcompare(KripkeMM):
             bisim_states=bisim_states
         )
 
-    def generate_model(self, k=None):
+    def _generate_model_compare(self, k=None):
 
-        # check for structure 
-        if self.complex_labels:
+        # compare structure difference alone or also compare compressors
+        if self.complex_labels and self.compare_struct:
             self.simple_abst = self._compress(self.simple_compressor, k=None)
             self.abst = self._compress(self.compressor, k=None)
             # k-bisim 
             if k is not None:
                 self.simple_abst_k = self._compress(self.simple_compressor, k=k)
                 self.abst_k = self._compress(self.compressor, k=k)
+        # compare compressors  with complex labels
+        elif self.complex_labels:
+            self.abst = self._compress(self.compressor, k=None)
+            if k is not None:
+                self.abst_k = self._compress(self.compressor, k=k)
+        # compare compressors without complex labels 
         else:
-            # compressor normal compressore here becomes the "simple compressor"
             self.simple_abst = self._compress(self.compressor, k=None)
             if k is not None:
                 self.simple_abst_k = self._compress(self.compressor, k=k)
+
+    def _generate_model_single_model(self, k=None):
+        
+        if self.complex_labels:
+            if k is not None:
+                self.abst_k = self._compress(self.compressor, k=k)
+            else:
+                self.abst = self._compress(self.compressor, k=None)
+        else:
+            if k is not None:
+                self.simple_abst_k = self._compress(self.compressor, k=k)
+            else:
+                self.simple_abst = self._compress(self.compressor, k=None)
 
     def update_structure(self, data):
 
         self.struct.generate(data)
         # update structures 
-        if self.complex_labels and self.compare:
+        if self.compare_struct:
             self.simple_struct.generate(data)

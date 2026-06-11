@@ -174,7 +174,7 @@ def sample_episode(envir, policy):
 
 
 def experiment(env, model, epochs, visualize=False, render=False, view_env=False,
-                compare=False, model_iter=3, complex_labels=False, **kwargs):
+                compare_models=False, compare_struct=False, model_iter=3, complex_labels=False, **kwargs):
     
     # memory = XP_Replay(1000)
     model = model
@@ -187,11 +187,11 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
     # simple statistics
     e_lengths = []
     struct_size = []
-    data_type = (lambda: {"simple": [], "complex": []} ) if complex_labels else list 
 
+    data_type = (lambda: {"simple": [], "complex": []} ) if compare_struct else list 
     # aids for collecting data and visualization dynamically 
     compressor, labels = "k_bisim" if kwargs.get("k") else "bisim", "complex" if complex_labels else "simple"
-    meta_size = {compressor: data_type()} if not compare else {"bisim": data_type(), "k_bisim" : data_type()}
+    meta_size = {compressor: data_type()} if not compare_models else {"bisim": data_type(), "k_bisim" : data_type()}
     model_map = {"bisim" : {"simple":"simple_abst", "complex": "abst"},
             "k_bisim": {"simple":"simple_abst_k", "complex": "abst_k"}}
 
@@ -204,6 +204,7 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
         # episode len counter
         episode_len = 0 
         env.reset()
+        episode_xp = []
 
         # act until reaching some terminal state 
         while True:
@@ -223,60 +224,68 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
                 time.sleep(1)
 
             # generate mental model incrementally
-            model.update_structure([xp])
+            episode_xp.append(xp)
 
             # end epoch if agend reaches terminal state 
             if xp[-1] == True:
                 break
 
-        # display current kripke structure 
-        if visualize:
-            print(f"Kripke structure on episode {i}, episode with {episode_len} transitions")
-            print(model.struct.states)
-            print(model.struct.labels)
-            print(model.struct.relations)
-            model.struct.visualize()
+        # update model structure 
+        model.update_structure(episode_xp)
 
-            input()
-
-        # generate abstract model 
+        # generate abstract model and do visualization
         if i % model_iter == 0 :
             # generate based on bisim
             model.generate_model(**kwargs)
+
+           
             
-            if visualize:
-                print(f"Compressed model iter {i}. Nodes in structure: {len(model.struct.states)}")
-                
-                if compare and getattr(model, "simple_abst_k", None):
-                    print(f"Bisim: ({len(getattr(model, model_map["bisim"][labels]).states)} states)")
-                    model.visualize(model.abst, title="Bisim")
+            if visualize:  
+                # compare with structure 
+                struct_size_i = len(model.struct.states)
+                print(f"Current structure iter {i}. With {struct_size_i} states")
+                model.visualize(model.struct, f"Structure_{i}: {struct_size_i} states") 
+
+                # visualize the two "main" models that is if complex & simple => complex            
+                if compare_models and getattr(model, "abst_k", None):
+                    states_m1 = len(getattr(model, model_map["bisim"][labels]).states)
+                    print(f"Bisim: {states_m1} states")
+                    model.visualize(model.abst, title=f"Bisim_{i}: {states_m1} states")
+
                     input()
-                    print(f"k-Bisim: ({len(getattr(model, model_map["k_bisim"][labels]).states)} states)")
-                    model.visualize(model.abst_k, title="k-Bisim")
+                    states_m2 = len(getattr(model, model_map["k_bisim"][labels]).states)
+                    print(f"k-Bisim: {states_m2} states")
+                    model.visualize(model.abst_k, title=f"k-Bisim_{i}: {states_m2} states")
+
                 else:
-                    print(f"{compressor.capitalize()}: {len(getattr(model, model_map[compressor][labels]))} states")
-                    model.visualize(getattr(model, model_map[compressor][labels]))
+                    abst_size = len(getattr(model, model_map[compressor][labels]).states)
+                    print(f"{compressor.capitalize()}: {abst_size} states")
+                    model.visualize(getattr(model, model_map[compressor][labels]), f"{compressor.capitalize()}_{i}: {abst_size} states")
                 
                 # give time to view generated models
                 input()
-        
+        else:
+            if visualize:
+                print(f"Structure_{i}: {len(model.struct.states)} states. Episode had {episode_len} transitions")
+                model.struct.visualize()
+
         # update statistics
         e_lengths.append(episode_len)
         struct_size.append(len(model.struct.states))
 
         # update model size based on conditions
         for key, val in meta_size.items():
-
             # append len of 0 if model not yet created
             if i < model_iter:
-                if type(val) is not dict:
+                if not compare_struct:
                     meta_size[key].append(0)
                 else:
                     for label in val:
                         meta_size[key][label].append(0)
             else:
-                if type(val) is not dict:
-                    meta_size[key].append(len(getattr(model, model_map[key]["simple"]).states))
+                if not compare_struct:
+                    # by default if we dont compare structures the models use self.abst or self.abstk which here we map to "complex"
+                    meta_size[key].append(len(getattr(model, model_map[key][labels]).states))
                 else:
                     for label in val:
                         meta_size[key][label].append(len(getattr(model, model_map[key][label]).states))
@@ -303,7 +312,8 @@ def main():
             render, view_env, visualize = False, False, False
         
         #compare models 
-        compare = input("Compare models? ").lower().strip() == "y"
+        compare_models = input("Compare models? ").lower().strip() == "y"
+        compare_struct = input("Compare structure? ").lower().strip() == "y"
         
         # select model details 
         if input("Select model parameters? ").lower().strip() == "y":
@@ -323,27 +333,27 @@ def main():
             multi_edges = False
         
         # init model
-        model = KMMcompare(compare=compare, n_action=len(env.actions), complex_labels=complex_labels, 
-                        multi_edges=multi_edges, zone_radious=zone_radious)
+        model = KMMcompare(compare_models=compare_models, compare_struct=compare_struct, n_action=len(env.actions),
+                            complex_labels=complex_labels, multi_edges=multi_edges, zone_radious=zone_radious)
         # if compare:
         #     model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
         # else:
         #     model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
 
         # run experiment 
-        experiment(env, model, n, visualize=visualize, render=False, view_env=view_env,
-                    compare=compare, complex_labels=complex_labels, k=k)
+        experiment(env, model, n, visualize=visualize, render=False, view_env=view_env, compare_models=compare_models,
+                    compare_struct=compare_struct, complex_labels=complex_labels, k=k)
     
     # basic simple testing 
     else:
 
-        model = KMMcompare(compare=False, n_action=len(env.actions), complex_labels=True, 
+        model = KMMcompare(compare_models=True, compare_struct=False, n_action=len(env.actions), complex_labels=True, 
                         multi_edges=True, zone_radious=None)
         # model = KripkeMM(multi_edges=True, n_action=len(env.actions), 
         #                  complex_labels=True, zone_radious=None)
 
         experiment(env, model, 10, visualize=True, render=False, view_env=False,
-                compare=False, complex_labels=True, k=None)
+                compare_models=True, compare_struct=False, complex_labels=True, k=2)
 
 # program execution 
 if __name__ == "__main__":

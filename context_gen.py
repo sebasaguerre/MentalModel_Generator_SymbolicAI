@@ -60,6 +60,7 @@ class Verify():
 
 def ContextGenerator():
     
-    def __init__(self, model):
+    def __init__(self, model, KN_d):
         self.model = model
         self.verifier = Verify()
+        self.context = KN_d

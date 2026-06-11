@@ -212,7 +212,8 @@ class BiSimMini:
         else:
             self.record_builder = self._record_builder_simple
             self.fastsplit_k = self._fastsplit_k_simple
-            self.refinement = self._refinement_simple 
+            self.refinement = self._refinement_simple
+            self.quotient_construction = self._quotient_construction_simple
 
     def _record_builder_multi(self):
         "Record builder when dealing with multi/labeled edges"
@@ -536,7 +537,7 @@ class BiSimMini:
         # Step 4: refinining Q with respects to B
         Q = self.fastsplit(preB, Q)
 
-        # Step 5: computing E^-1(B) - E^-(S - B)  + Update counters
+        # Step 5: computing E^-1(B) - E^-(S - B)
         purepreB = set()
 
         for x, edges_to_B in x_count_B.items():
@@ -568,12 +569,88 @@ class BiSimMini:
                     edge.count = xcountB
             
         return X, Q
-    
-    def fastsplit_multi(self, preB, Q):
-        pass
 
     def _refinment_multi(self, X, Q):
-        pass
+
+        # Step 1: selecting refinment block
+        # get splitter and examin first two subblocks
+        S = self.worklist.pop().data
+        S.in_c = False
+        B1 = S.sub_blocks.head.data
+        B2 = S.sub_blocks.head.next.data
+
+        # select the smaller one 
+        B = B1 if B1.size <= B2.size else B2 
+
+        # Step 2: update X 
+        S.sub_blocks.remove(B.node_x)                 
+        Sprime = LargeB()                            # create new block of X which is simple 
+        B.block_x = Sprime                           # make S' the parent node of B 
+        B.node_x = Sprime.sub_blocks.insert(B)       # insert B into S'
+        X.insert(Sprime)                             # insert S' into X
+
+        # put S back into worklist if compund 
+        if S.compound:
+            self.worklist.insert(S)
+            S.in_c = True
+
+        # Step 3: build preimage + counters, keyed per (state, action)
+        preB_by_action = defaultdict(set)
+        x_count_B = defaultdict(list)     # (x, action) -> list of edges into B (count = len)
+        current_count = dict()            # (x, action) -> Counter == count(x, B, a)
+
+        # iterate over elements of B
+        node = B.elements.head
+        while node is not None:
+
+            # iterate state through its actions (preimage is {action: [edges]})
+            for action, edges in node.data.preimage.items():
+                for edge in edges:
+                    source = edge.source
+                    preB_by_action[action].add(source)
+                    x_count_B[(source, action)].append(edge)
+
+            node = node.next
+
+        # record count(x, B, a) in a local dict -- State has a single current_count
+        # slot and cannot hold per-action counts, so we do NOT stash it on the state
+        for key, edges in x_count_B.items():
+            current_count[key] = Counter(len(edges))
+
+        # Step 4: split Q with respect to B, one pass per action
+        for states in preB_by_action.values():
+            Q = self.fastsplit(states, Q)
+
+        # Step 5: compute pure preimage E_a^-1(B) - E_a^-1(S - B) per action
+        purepreB_by_action = defaultdict(set)
+        for (state, action), edges_to_B in x_count_B.items():
+
+            old_count = edges_to_B[0].count          # count(x, S, a)
+
+            # all of x's a-edges into S go into B => x does not reach S - B via a
+            if current_count[(state, action)].value == old_count.value:
+                purepreB_by_action[action].add(state)
+
+        # Step 6: refine Q with respect to S - B, per action
+        for states in purepreB_by_action.values():
+            Q = self.fastsplit(states, Q)
+
+        # Step 7: update counts per (state, action)
+        for (state, action), edges_to_B in x_count_B.items():
+            countB = current_count[(state, action)]   # count(x, B, a)
+            countS = edges_to_B[0].count              # count(x, S, a)
+
+            # remaining a-edges into S - B
+            countS.value -= countB.value
+
+            # if none left, repoint to the B counter
+            if countS.value == 0:
+                for edge in edges_to_B:
+                    edge.count = countB
+
+        return X, Q
+
+        
           
     def fastPTalgo(self):
         """
