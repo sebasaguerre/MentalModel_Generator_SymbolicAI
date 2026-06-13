@@ -3,13 +3,13 @@ import networkx as nx
 from graphviz import Digraph
 import matplotlib.pyplot as plt
 from bisim import BiSimMini
+from itertools import chain
 import os, types, tempfile, textwrap
 from collections import defaultdict, deque
 
 
 class ModelStructure:
-    def __init__(self, n_action, labelling_function=None, multi_edges=False, complex_labels=True,
-                 zones=None, zone_radious=None):
+    def __init__(self, n_action, labelling_function=None, multi_edges=False):
         """
         Arguments:
             - n_action := number of actions possible
@@ -23,20 +23,8 @@ class ModelStructure:
         self.init_setup_for_edges(multi_edges)
 
         # building attributes 
-        self.complex_labels = complex_labels
         self.n_action = n_action
         self.multi_edges = multi_edges
-
-        # cset zones depending on instantiation
-        if zones is not None:
-            self.zones = zones 
-        else:
-            self.zones = {"GoalZone":"Goal", "DeathZone":"TS"}
-
-        if zone_radious is not None:
-            self.zone_radious = zone_radious
-        else:
-            self.zone_radious = 3
 
         # if labelling function is give then use that instead of default
         if labelling_function:
@@ -96,79 +84,6 @@ class ModelStructure:
         
         # label not found within radious 
         return False
-    
-    def retrieve_neighborhood(self, states, max_steps):
-
-        # state nighboorhood 
-        neighbourhood = set()
-        to_visit = deque()
-        visited = set(states)
-
-        # extract base level states
-        for s in states:    
-            to_visit.append((s, 0))
-
-        # traverse level by level 
-        while to_visit:
-            current_state, current_depth = to_visit.popleft()
-            
-            if self.multi_edges:
-                successors = set().union(*self.relations[current_state].values())
-            else:
-                successors = self.relations[current_state]
-            
-            for next_s in successors:
-                # save neighbout and store for further search
-                if next_s not in visited:
-                    visited.add(next_s)
-                    neighbourhood.add(next_s)
-                    if current_depth + 1 < max_steps:
-                        to_visit.append((next_s, current_depth + 1))
-        
-        return neighbourhood
-    
-    def generate_labels(self, data: list[tuple]):
-        """
-        Generate higher order labels lables that change dynamically.
-        Labels like: 
-            - Level of entropy
-            - Proximity to goal 
-            - Proximity to terminal states 
-        """
-        # extract neighbours of recently visited states 
-        recent_states = [state for xp in data for state in (xp[0], xp[2])] 
-        neighbours = self.retrieve_neighborhood(recent_states, self.zone_radious)
-
-        for s in neighbours:
-
-            
-            s_labels = self.labels[s]
-
-            bounds = any(label == "bound" for label in s_labels)
-            terminal = any(label in ["TS", "Goal"] for label in s_labels)
-            
-           # compute proportion of actions explored 
-            act_exp = len(self.relations[s]) / self.n_action
-            entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
-
-            # add dynamic entropy label and zones-labels 
-            if not terminal:
-                
-                # check if state has an entopy level 
-                current_entropy = [label for label in self.labels[s] if label.startswith("E")]
-                
-                # add or update entropy
-                if not current_entropy:
-                    self.labels[s].add(entropy)
-                elif current_entropy[0] != entropy:
-                    self.labels[s].remove(current_entropy[0])
-                    self.labels[s].add(entropy)
-
-                # add zone label if applicable 
-                for zone, label in self.zones.items():
-                    if zone not in self.labels[s]:
-                        if self.within_radious_dfs(s, label, self.zone_radious):
-                            self.labels[s].add(zone)
                 
     def add_labels(self, s, action, next_s, reward, done):
         "Envir. labels. Based on experiments, the labeller(tested) with highest compression rate"
@@ -224,14 +139,6 @@ class ModelStructure:
             # if reached state is terminal assign empty dict => no actions
             if done:
                 self.relations[next_s] = {}
-    
-    def generate(self, data: list[tuple]):
-        # generate structure and basic labels
-        self.generate_structure(data)
-
-        # labeling function: add complex labels 
-        if self.complex_labels:
-            self.generate_labels(data)
 
     def _visualize(self):
         "Visualize Kripke model using boxes"
@@ -344,23 +251,124 @@ class ModelStructure:
             pass
 
 class CompressedModel:
-    def __init__(self, states, relations, labels, mapping, bisim_states):
+    def __init__(self, states, relations, labels, mapping, bisim_states, multi_edges):
         self.states = states                           # macro states
         self.relations = relations                         # quotient relations 
         self.labels = labels                           # quotient labels 
         self.map = mapping                             # original_state -> macro_state
         self.bisim_states = bisim_states               # macro_state -> [bisim original_states]
+        self.multi_edges = multi_edges
 
 
 class KripkeMM:
     """
     Wrapper class that bring all of the components together 
     """
-    def __init__(self, multi_edges=False, **kwargs):
+    def __init__(self, multi_edges=False, complex_labels=True,
+                  zones=None, zone_radious=None, **kwargs):
         self.struct = ModelStructure(multi_edges=multi_edges, **kwargs)         # underlying structure 
         self.compressor = BiSimMini(self.struct, multi_edges=multi_edges)       # compresion engine 
         self.contex_generator = None                                            # formula generator on basis of model
-        self.abst = None                                                        # learned compressed model 
+        self.abst = None
+        
+        self.complex_labels = complex_labels 
+        # set zones depending on instantiation
+        if zones is not None:
+            self.zones = zones 
+        else:
+            self.zones = {"GoalZone":"Goal", "DeathZone":"TS"}
+
+        if zone_radious is not None:
+            self.zone_radious = zone_radious
+        else:
+            self.zone_radious = 3
+
+    def within_radious_dfs(self, state, label, max_steps):
+
+        # baseline success: label found at current state 
+        if label in self.labels[state]:
+            return True
+        
+        # safety check, if max_steps is non-positive => no more search 
+        if max_steps <= 0:
+            return False
+        
+        # queue with tuples (current_state, current_depth)
+        queue = deque([(state, 0)])
+
+        # track visited states to prevent inf loops
+        visited = {state}
+
+        while queue:
+            current_state, current_depth = queue.popleft()
+
+            # check if we can do further searching 
+            if current_depth >= max_steps:
+                continue
+            
+            # adaptation for dealing with edge type 
+            if self.multi_edges:
+                successors = chain.from_iterable(*self.relations[current_state].values())
+            else:
+                successors = self.relations[current_state]
+
+            # look at all successors of the current state 
+            for next_s in successors:
+                if next_s not in visited:
+                    # check if label is true at state 
+                    if label in self.labels[next_s]:
+                        return True 
+                    
+                    # label not found => Update visited and queue 
+                    visited.add(next_s)
+                    queue.append((next_s, current_depth + 1))
+        
+        # label not found within radious 
+        return False
+        
+    def generate_labels(self):
+        """
+        Generate higher order labels lables that change dynamically.
+        Labels like: 
+            - Level of entropy
+            - Proximity to goal 
+            - Proximity to terminal states 
+        """
+        # optimize to avoid lookups
+        relations = self.abst.labels
+        labels = self.abst.labels 
+        n_actions = self.struct.n_actions
+        
+
+        for s in relations.keys():
+
+            s_labels = labels[s]
+
+            bounds = any(label == "bound" for label in s_labels)
+            terminal = any(label in ["TS", "Goal"] for label in s_labels)
+            
+           # compute proportion of actions explored 
+            act_exp = len(s_labels.values()) / n_actions
+            entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
+
+            # add dynamic entropy label and zones-labels 
+            if not terminal:
+                
+                # check if state has an entopy level 
+                current_entropy = [label for label in labels[s] if label.startswith("E")]
+                
+                # add or update entropy
+                if not current_entropy:
+                    self.abst.labels[s].add(entropy)
+                elif current_entropy[0] != entropy:
+                    self.abst.labels[s].remove(current_entropy[0])
+                    self.abst.labels[s].add(entropy)
+
+                # add zone label if applicable 
+                for zone, label in self.zones.items():
+                    if zone not in labels[s]:
+                        if self.within_radious_dfs(s, label, self.zone_radious):
+                            self.abst.labels[s].add(zone)                                                        # learned compressed model 
     
     def one_step_props(self, state):
         # get all the one step future proposition
@@ -370,62 +378,7 @@ class KripkeMM:
             future_props.append(self.struct.labels[s_next])
         
         return future_props
-    
-    # def visualize(self, model, title=None):
-
-    #     # initialize with better layout attributes
-    #     dot = Digraph(node_attr={
-    #         'shape': 'padded_box', # Custom style via HTML or rounded
-    #         'fontname': 'Helvetica,Arial,sans-serif',
-    #         'fontsize': '12'
-    #     })
-
-    #     # add title if given 
-    #     if title:
-    #         dot.attr(label=title, labelloc="t", fontsize="16", fontname="Helvetica-Bold")
-        
-    #     # increase spacing between nodes and layers to reduce clutter
-    #     dot.attr(nodesep='0.6', ranksep='0.6', rankdir="LR")
-    #     dot.attr(size='10,6!', ratio='compress')                 # give a more zoomed out graph
-
-    #     # add nodes with clean HTML formatting
-    #     for s, props in model.labels.items():
-    #         node_id = str(s)
-    #         prop_str = ", ".join(map(str, props)) if props else "Ø"
-            
-    #         # Stripped whitespace from HTML string to reduce string processing overhead
-    #         html_label = (
-    #             f'<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" STYLE="ROUNDED">'
-    #             f'<TR><TD BGCOLOR="#EAEAEA"><B>{node_id}</B></TD></TR>'
-    #             f'<TR><TD BGCOLOR="#FFFFFF"><FONT POINT-SIZE="10">{prop_str}</FONT></TD></TR>'
-    #             f'</TABLE>>'
-    #         )
-    #         dot.node(node_id, label=html_label, shape='none')
-
-    #     # optimize edge creation
-    #     # using dot.edges() with a generator expression is much faster than nested loops
-    #     edges = (
-    #         (str(s), str(next_s)) 
-    #         for s, next_states in model.relations.items() 
-    #         for next_s in next_states
-    #     )
-    #     dot.edges(edges)
-
-    #     # apply edge styling globally to the graph instead of per-edge to save memory
-    #     dot.edge_attr.update(color="#4a4a4a", arrowhead="vee")
-
-
-    #     # create temporary file path that diappears later
-    #     with tempfile.NamedTemporaryFile(delete=False, suffix=".gv") as temp_file:
-    #         temp_base = temp_file.name
-
-    #     # display graph and clean up immediately
-    #     dot.render(temp_base, view=True, format="svg")
-    #     try:
-    #         os.remove(temp_base)
-    #     except OSError:
-    #         pass
-    
+  
     def visualize(self, model, title=None):
         """
         Visualizer of model, adapted to work for single and multi edges
@@ -505,7 +458,7 @@ class KripkeMM:
             pass
     
     def update_structure(self, data):
-        self.struct.generate(data)
+        self.struct.generate_structure(data)
     
     def generate_model(self, k=None):
         # generate abstract state with standard bisim of k-bisim
@@ -520,8 +473,15 @@ class KripkeMM:
             relations=relations,
             labels=labels,
             mapping=mapping,
-            bisim_states=bisim_states
+            bisim_states=bisim_states,
+            multi_edges=self.compressor.multi_edges
         )
+
+        # populate model with complext labels
+        if self.complex_labels:
+            self.generate_labels()
+
+
 
 class KMMcompare(KripkeMM):
     """Current adjusted version to account for possible 4*4 comparion"""
