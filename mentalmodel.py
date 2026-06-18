@@ -176,7 +176,7 @@ class ModelStructure:
         # display graph (SVG is often sharper than PNG)
         dot.render(view=True, format="svg")
     
-    def visualize(self):
+    def visualize(self, title=None):
 
         # Initialize graph with a clean font
         dot = Digraph(node_attr={
@@ -191,7 +191,8 @@ class ModelStructure:
         })
         
         # Title and compact layout configuration
-        # dot.attr(label="Kripke Model Semantics", labelloc="t", fontsize="14", fontname="Helvetica-Bold")
+        if title is not None:
+            dot.attr(label=title, labelloc="t", fontsize="14", fontname="Helvetica-Bold")
         dot.attr(nodesep='0.6', ranksep='0.8', rankdir="LR")
         dot.attr(size='10,6!', ratio='compress')
 
@@ -283,10 +284,15 @@ class KripkeMM:
         else:
             self.zone_radious = 3
 
-    def within_radious_dfs(self, state, label, max_steps):
+    def within_radious_dfs(self, model, state, label, max_steps):
+
+        # optimize to avoide lookups
+        labels = model.labels
+        relations = model.relations
+        multi_edges = self.struct.multi_edges
 
         # baseline success: label found at current state 
-        if label in self.labels[state]:
+        if label in labels[state]:
             return True
         
         # safety check, if max_steps is non-positive => no more search 
@@ -307,8 +313,8 @@ class KripkeMM:
                 continue
             
             # adaptation for dealing with edge type 
-            if self.multi_edges:
-                successors = chain.from_iterable(*self.relations[current_state].values())
+            if multi_edges:
+                successors = chain.from_iterable(relations[current_state].values())
             else:
                 successors = self.relations[current_state]
 
@@ -316,7 +322,7 @@ class KripkeMM:
             for next_s in successors:
                 if next_s not in visited:
                     # check if label is true at state 
-                    if label in self.labels[next_s]:
+                    if label in labels[next_s]:
                         return True 
                     
                     # label not found => Update visited and queue 
@@ -326,7 +332,7 @@ class KripkeMM:
         # label not found within radious 
         return False
         
-    def generate_labels(self):
+    def generate_labels(self, model=None):
         """
         Generate higher order labels lables that change dynamically.
         Labels like: 
@@ -334,10 +340,14 @@ class KripkeMM:
             - Proximity to goal 
             - Proximity to terminal states 
         """
+        # used for testing 
+        if model is None:
+            model = self.abst
+
         # optimize to avoid lookups
-        relations = self.abst.labels
-        labels = self.abst.labels 
-        n_actions = self.struct.n_actions
+        relations = model.relations
+        labels = model.labels 
+        n_actions = self.struct.n_action
         
 
         for s in relations.keys():
@@ -348,27 +358,25 @@ class KripkeMM:
             terminal = any(label in ["TS", "Goal"] for label in s_labels)
             
            # compute proportion of actions explored 
-            act_exp = len(s_labels.values()) / n_actions
-            entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
+            act_exp = len(relations[s].keys()) / n_actions
+
+            # set exploration quotient 
+            if act_exp < 1.0:
+                entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
+            else:
+                entropy = f"E_none"
 
             # add dynamic entropy label and zones-labels 
             if not terminal:
                 
-                # check if state has an entopy level 
-                current_entropy = [label for label in labels[s] if label.startswith("E")]
-                
                 # add or update entropy
-                if not current_entropy:
-                    self.abst.labels[s].add(entropy)
-                elif current_entropy[0] != entropy:
-                    self.abst.labels[s].remove(current_entropy[0])
-                    self.abst.labels[s].add(entropy)
-
+                model.labels[s].add(entropy)
+                
                 # add zone label if applicable 
                 for zone, label in self.zones.items():
                     if zone not in labels[s]:
-                        if self.within_radious_dfs(s, label, self.zone_radious):
-                            self.abst.labels[s].add(zone)                                                        # learned compressed model 
+                        if self.within_radious_dfs(model, s, label, self.zone_radious):
+                            model.labels[s].add(zone)                                              # learned compressed model 
     
     def one_step_props(self, state):
         # get all the one step future proposition
@@ -400,7 +408,7 @@ class KripkeMM:
         if title:
             dot.attr(label=title, labelloc="t", fontsize="14", fontname="Helvetica-Bold")
         dot.attr(nodesep='0.6', ranksep='0.8', rankdir="LR")
-        dot.attr(size='10,6!', ratio='compress')
+        dot.attr(size='14,10!', ratio='compress')
 
         # Add nodes based on their structural properties
         for s, props in model.labels.items():
@@ -486,11 +494,11 @@ class KripkeMM:
 class KMMcompare(KripkeMM):
     """Current adjusted version to account for possible 4*4 comparion"""
 
-    def __init__(self, compare_models, compare_struct, multi_edges=False, **kwargs):
-        super().__init__(multi_edges=multi_edges, **kwargs)
+    def __init__(self, compare_models, compare_struct, complex_labels=True, multi_edges=False, **kwargs):
+        super().__init__(complex_labels=complex_labels, multi_edges=multi_edges, **kwargs)
         # init abst_k
         self.abst_k = None
-        self.complex_labels = kwargs.get("complex_labels")
+        # self.complex_labels = kwargs.get("complex_labels")
         self.simple_abst = None
         self.simple_abst_k = None
         self.compare_struct = compare_struct
@@ -513,13 +521,21 @@ class KMMcompare(KripkeMM):
             macro_states, relations, labels, mapping, bisim_states = compressor.bisim(maps=True)
 
         # abstract model 
-        return CompressedModel(
+        learned_model = CompressedModel(
             states=macro_states,
             relations=relations,
             labels=labels,
             mapping=mapping,
-            bisim_states=bisim_states
+            bisim_states=bisim_states,
+            multi_edges=self.struct.multi_edges
         )
+
+        # populate model with complext labels
+        if self.complex_labels:
+            self.generate_labels(model=learned_model)
+
+        return learned_model
+
 
     def _generate_model_compare(self, k=None):
 
@@ -557,7 +573,7 @@ class KMMcompare(KripkeMM):
 
     def update_structure(self, data):
 
-        self.struct.generate(data)
+        self.struct.generate_structure(data)
         # update structures 
         if self.compare_struct:
-            self.simple_struct.generate(data)
+            self.simple_struct.generate_structure(data)

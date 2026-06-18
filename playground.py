@@ -238,13 +238,11 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
             # generate based on bisim
             model.generate_model(**kwargs)
 
-           
-            
             if visualize:  
                 # compare with structure 
                 struct_size_i = len(model.struct.states)
                 print(f"Current structure iter {i}. With {struct_size_i} states")
-                model.visualize(model.struct, f"Structure_{i}: {struct_size_i} states") 
+                model.struct.visualize(f"Structure_{i}: {struct_size_i} states") 
 
                 # visualize the two "main" models that is if complex & simple => complex            
                 if compare_models and getattr(model, "abst_k", None):
@@ -264,10 +262,10 @@ def experiment(env, model, epochs, visualize=False, render=False, view_env=False
                 
                 # give time to view generated models
                 input()
-        else:
-            if visualize:
-                print(f"Structure_{i}: {len(model.struct.states)} states. Episode had {episode_len} transitions")
-                model.struct.visualize()
+        # else:
+        #     if visualize:
+        #         print(f"Structure_{i}: {len(model.struct.states)} states. Episode had {episode_len} transitions")
+        #         model.struct.visualize()
 
         # update statistics
         e_lengths.append(episode_len)
@@ -347,13 +345,13 @@ def main():
     # basic simple testing 
     else:
 
-        model = KMMcompare(compare_models=True, compare_struct=False, n_action=len(env.actions), complex_labels=True, 
+        model = KMMcompare(compare_models=False, compare_struct=False, n_action=len(env.actions), complex_labels=True, 
                         multi_edges=True, zone_radious=None)
         # model = KripkeMM(multi_edges=True, n_action=len(env.actions), 
         #                  complex_labels=True, zone_radious=None)
 
         experiment(env, model, 10, visualize=True, render=False, view_env=False,
-                compare_models=True, compare_struct=False, complex_labels=True, k=2)
+                compare_models=False, compare_struct=False, complex_labels=True, k=2)
 
 # program execution 
 if __name__ == "__main__":

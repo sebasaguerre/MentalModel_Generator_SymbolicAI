@@ -35,3 +35,54 @@ def get_premap(self):
     for world, successors in self.edges.items():
         for s in successors:
             self.preimage[s].add(world)
+
+
+      
+    def generate_labels(self):
+        """
+        Generate higher order labels lables that change dynamically.
+        Labels like: 
+            - Level of entropy
+            - Proximity to goal 
+            - Proximity to terminal states 
+        """
+        # optimize to avoid lookups
+        relations = self.abst.labels
+        labels = self.abst.labels 
+        n_actions = self.struct.n_actions
+        
+
+        for s in relations.keys():
+
+            s_labels = labels[s]
+
+            bounds = any(label == "bound" for label in s_labels)
+            terminal = any(label in ["TS", "Goal"] for label in s_labels)
+            
+           # compute proportion of actions explored 
+            act_exp = len(s_labels.values()) / n_actions
+
+            # set exploration quotient 
+            if act_exp < 1.0:
+                entropy = f"E_{'high' if act_exp <= 0.33 else 'mid' if act_exp <= 0.66 else 'low'}"
+            else:
+                entropy = f"E_none"
+
+            # add dynamic entropy label and zones-labels 
+            if not terminal:
+                
+                # check if state has an entopy level 
+                current_entropy = [label for label in labels[s] if label.startswith("E")]
+                
+                # add or update entropy
+                if not current_entropy:
+                    self.abst.labels[s].add(entropy)
+                elif current_entropy[0] != entropy:
+                    self.abst.labels[s].remove(current_entropy[0])
+                    self.abst.labels[s].add(entropy)
+
+                # add zone label if applicable 
+                for zone, label in self.zones.items():
+                    if zone not in labels[s]:
+                        if self.within_radious_dfs(s, label, self.zone_radious):
+                            self.abst.labels[s].add(zone) 

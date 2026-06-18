@@ -1,11 +1,25 @@
 from itertools import chain
 from collections import deque, defaultdict
 
-class Verify():
+# structure used for extracitng and managing labels 
+class LabelTree:
+    def __init__(self, props, successors):
+        self.props=props                   # set of propositions true at 
+        self.children=successors           # {action : [LabelTree]}
+    
+    def is_leaf(self):
+        return not self.children
+
+class Extractor():
     def __init__(self, model):
         self.model = model
         self.get_successors = self._get_successors_multi if model.multi_edges else self._get_successors_simple
-
+        self._extract_cache = {}       # cache that persists across calls
+    
+    def update_model(self, new_model):
+        "update model and clear out cache"
+        self.model = new_model
+        self._extract_cache = {} 
 
     def _get_successors_simple(self, state):
         return self.model.relations[state]
@@ -96,94 +110,113 @@ class Verify():
         # label not found within radious 
         return False 
     
-    def label_extractor_v1(self, state, max_steps):
-        """
-        For a given model extract all labels to a max depth of "max_steps" via BFS
-        Return {depth:[(action, {prop}), ... ]}
-        """
-        # optimize efficiency by avoiding lookups
-        relations = self.model.relations
-        labels = self.model.labels
-        
-        # init and append initial state and props
-        labels_per_layer = defaultdict(list)
-        labels_per_layer[0].append((None, labels[state]))
-
-        queue = deque([(state, 0)])
-        visited = set()
-
-        while queue:
-
-            current_state, current_depth = queue.popleft()
-            # append labels of of current state at current level 
-
-            # iterate over successors of state 
-            for action, next_states in relations[current_state].items() :
-                for next_state in next_states:
-                    # extract labels form successors and at to queue
-                    labels_per_layer[current_depth + 1].append((action, labels[next_state]))
-                    if current_depth + 1 <= max_steps:
-                        queue.append((next_state, current_depth + 1))
-
-        return labels_per_layer 
-    
     def extract_labels(self, state, max_depth):
         """
-        For a given model extract all labels to a max depth of "max_steps" via DFS.
-        This return a tree for each action/labeld edge.
-        return {action: [(props, {next_action : (prop, {next_next_as: ... })), next_action' : ... }), ... }
-        
+        For a given model extract all labels to a max depth of "max_steps" via DFS,
+        and generate a tree.
+        This function utilizes memoization to reduce computaitonal complexity and
+        reuse previous extractions 
         """
         # optimize efficiency by avoiding lookups
         labels = self.model.labels
         relations = self.model.relations
+        cache = self._extract_cache
 
         def execute(state, steps_avail):
-            props = self.model.labels[state]
+            
+            # execution key
+            key = (state, steps_avail)
+
+            # if extraction has been done before return precomputed value 
+            if key in cache: 
+                return cache[key]
+
+            # get propositions of current state 
+            props = labels[state]
 
             # base case: no more steps are possible 
             if steps_avail == 0:
-                return (props, {})
-            
-            next_states = {}
+                node =  LabelTree(props, {})
+            else:
 
-            for action in relations[state]:
-                next_states[action] = [
-                    self.extract_labels(succ, steps_avail - 1)
-                    for succ in relations[state][action]
-                ]
-            
-            return (props, next_states)
+                # next states reached via the actions =>  action : [LabelTree]
+                next_states = {}
+
+                # iterate over action possible at current state 
+                for action, successors in relations[state].items():
+                    # store successors of next_states
+                    children = []
+                    
+                    # get node for all successor states
+                    for succ in successors:
+                        children.append(execute(succ, steps_avail -1))
+
+                    # link action to successor nodes
+                    next_states[action] = children
+                
+                # create node in labeld tree 
+                node = LabelTree(props, next_states)
+
+            # store extraction in cache
+            cache[key] = node 
+
+            return node
 
         return  execute(state, max_depth)
 
+    
+    def print_label_tree(self, tree, indent=2, action_taken=None):
+        prefix = "  " * indent
+        action_str = f"--[{action_taken}]--> " if action_taken else ""
+        print(f"{prefix}{action_str}props: {set(tree.props)}")
+        for action, subtrees in tree.children.items():
+            for subtree in subtrees:
+                self.print_label_tree(subtree, indent + 2, action)
+    
+    # def parse_labels(self, label_dag, max_depth):
 
-        while queue:
+    #     order_paths = defaultdict(dict)
 
-            current_state, current_depth = queue.popleft()
-
-            # append labels of of current state at current level 
-            labels_per_layer[current_depth].append(labels[current_state])
+    #     def traverse(label_dag, steps_taken, max_steps):
             
-            successors = self.get_successors(current_state)
+    #         state_prop, action_dag = label_dag
 
-            # iterate over successors of state 
-            for next_state in successors:
-                # extract labels form successors and at to queue
-                labels_per_layer[current_depth + 1].append(labels[next_state])
-                if current_depth + 1 <= max_steps:
-                    queue.append((next_state, current_depth + 1))
+    #         # base case 
+    #         if steps_taken == max_depth or action_dag == {}:
+    #             return (max_depth, state_prop, None)
+            
+    #         for action, successor_dag in action_dag.items():
+    #             for successor in successor_dag:
+    #                 order_paths[(steps_taken, state_prop, action)] = dict(traverse(successor, steps_taken + 1, max_depth))
 
-        return labels_per_layer 
+    #     return order_paths
+
+
+# reusability of formulas generated at a state 
+class StateFormula:
+
+    def __inti__(self, state):
+        self.state = state
+        self._by_depth = {}
+
+    def get(self, depth):
+        return self._by_depth[depth]
+
+    def store(self, depth, formula):
+        self._by_depth[depth] = formula
 
 def ContextGenerator():
     
     def __init__(self, model, KN_d):
         self.model = model
-        self.verifier = Verify()
+        self.extractor = Extractor()
         self.context = KN_d
         self.operators = {[]}
-        self.objectives = {"explore", "goal"}
+        self.objectives = {"goal": ["Goal", "GoalZone"], "explore": ["E_high", "E_mid"]}
 
-    def gen_formula(state, objective=""):
-        pass
+    
+
+    def gen_formula(state, objective):
+
+        if objective:
+            pass

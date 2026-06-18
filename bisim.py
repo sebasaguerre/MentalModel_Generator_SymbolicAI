@@ -840,8 +840,9 @@ class BiSimMini:
             # only go thorough a macro_state once 
             if macro_state not in quotient_labels:
 
-                # group member acts as representative of macro 
-                quotient_labels[macro_state] = self.labels[org_state]
+                # group member acts as representative of macro
+                # copy labels set to avoid struct mutation
+                quotient_labels[macro_state] = self.labels[org_state].copy()
 
                 # get original relations for representaitve member
                 group_relations = self.edges[org_state]
@@ -866,7 +867,7 @@ class BiSimMini:
             if macro_state not in quotient_labels:
                 
                 # assign macro labels and extract relations
-                quotient_labels[macro_state] = self.labels[org_state]
+                quotient_labels[macro_state] = self.labels[org_state].copy()
                 group_relations = self.edges[org_state]
                 
                 # iterate over labeld edges (each action maps to a set of targets)
