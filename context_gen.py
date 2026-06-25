@@ -1,11 +1,12 @@
-from itertools import chain
+from itertools import chain, islice
 from collections import deque, defaultdict
 
 # structure used for extracitng and managing labels 
 class LabelTree:
-    def __init__(self, props, successors):
-        self.props=props                   # set of propositions true at 
-        self.children=successors           # {action : [LabelTree]}
+    def __init__(self, state, props, successors):
+        self.state = state
+        self.props = props                   # set of propositions true at 
+        self.children = successors           # {action : [LabelTree]}
     
     def is_leaf(self):
         return not self.children
@@ -136,7 +137,7 @@ class Extractor():
 
             # base case: no more steps are possible 
             if steps_avail == 0:
-                node =  LabelTree(props, {})
+                node =  LabelTree(state, props, {})
             else:
 
                 # next states reached via the actions =>  action : [LabelTree]
@@ -155,7 +156,7 @@ class Extractor():
                     next_states[action] = children
                 
                 # create node in labeld tree 
-                node = LabelTree(props, next_states)
+                node = LabelTree(state, props, next_states)
 
             # store extraction in cache
             cache[key] = node 
@@ -191,6 +192,168 @@ class Extractor():
 
     #     return order_paths
 
+####### Support funcitons 
+def subscript(text: str) -> str:
+    # A complete map of available lowercase and numeric Unicode subscripts
+    sub_map = {
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', 
+        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ', 
+        'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ', 
+        'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ', 
+        'v': 'ᵥ', 'x': 'ₓ'
+    }
+    # Convert character if it exists in the map, otherwise keep it as-is
+    return "".join(sub_map.get(char, char) for char in text.lower())
+
+####### AST node clases
+class Atom:
+    def __init__(self, prop):
+        self.prop = prop
+
+    def __repr__(self):
+        return self.prop
+
+class AND:
+    def __init__(self, conjuncts):
+        self.conjuncts = conjuncts
+
+    def __repr__(self):
+        return "(" + " ∧ ".join(repr(c) for c in self.conjuncts) + ")"
+
+class OR:
+    def __init__(self, disjuncts):
+        self.disjuncts = disjuncts
+
+    def __repr__(self):
+        return "(" + " ∨ ".join(repr(c) for c in self.disjuncts) + ")"
+    
+class X:
+    "Next"
+    def __init__(self, f, action, quant=None):  # quant: 'E', 'A', or None
+        self.f = f
+        self.action = action
+        self.quant = quant
+    
+    def __repr__(self):
+        q = self.quant or '?'
+        return f"{q}X{subscript(self.action)}({self.f})"
+
+class U:
+    "Until"
+    def __init__(self, f, g, action, quant=None):
+        self.f = f
+        self.g = g
+        self.action = action
+        self.quant = quant
+    
+    def __repr__(self):
+        q = self.quant or '?'
+        return f"{q}({self.f} {subscript(self.action)}U {self.g})"
+
+class F:
+    "Eventually"
+    def __init__(self, f, action, quant=None):
+        self.f = f
+        self.action = action
+        self.quant = quant
+    
+    def __repr__(self):
+        q = self.quant or '?'
+        return f"{q} {subscript(self.action)}F{self.f})"
+
+class G:
+    "Global"
+    def __init__(self, f, action, quant=None):
+        self.f = f
+        self.action = action 
+        self.quant = quant
+
+    def __repr__(self):
+        q = self.quant or '?'
+        return f"{q} {subscript(self.action)}G{self.f}"
+
+class Generator:
+    def __init__(self, button_up=True):
+        # set the type of algorithm used for fomula generation 
+        if not button_up:
+            self.generate_formula = self._generate_top_down
+        else:
+            self.generate_formula = self._generate_button_up
+
+        # formula cache: state -> StateFormula
+        self._formula_cache = {}
+
+    def _generate_top_down(self, label_tree):
+        pass
+
+    
+    def _generate_button_up(self, label_tree, tree_depth):
+        
+        root = label_tree
+        cache = self._formula_cache
+        context = tree_depth
+
+        def execute(node, depth):
+            
+            # key used for hashing & storing state formulas with a given depth 
+            key = (node.state, context - depth)
+
+            # check is syntactic node exists in cache 
+            if key in cache:
+                return cache[key]
+
+            # check if leave node reached 
+            if node.is_leaf():
+                # create stateformula, store in cache and return val
+                if len(node.props) > 1:
+                    s_node = AND([Atom(p) for p in node.props])
+                else:
+                    s_node = Atom(next(iter(node.props)))
+                
+                cache[key] = s_node 
+                
+                return s_node 
+            # 
+            else:
+                
+                children = defaultdict(list)
+
+                for action, successors in node.children.items():
+                    for succ_node in successors:
+                        children[action].append(execute(succ_node, depth + 1))
+                    
+                # bubble-up -> wrap kids in Next Wrapper
+                state_s_nodes = deque()                            # all syntactic nodes that belong to this state
+                for action, s_nodes in children.items():
+
+                    if len(s_nodes) > 1:
+                        s_node = X(OR(s_nodes), action, quant="A")
+                    else:
+                        s_node = X(s_nodes[0], action, quant="A")
+                    
+                    state_s_nodes.append(s_node)
+                
+                # now that we iterated over all the succesors and added nXt, we get state props 
+                if len(node.props) > 1:
+                    state_s_nodes.appendleft(AND([Atom(p) for p in node.props]))
+                else:
+                    state_s_nodes.appendleft(Atom(next(iter(node.props))))
+                
+                # now we create the parent node and return 
+                parent_s_node = AND(state_s_nodes)
+
+                # store parent node in cache 
+                cache[key] = parent_s_node
+
+                return parent_s_node
+
+        return execute(root, 0)
+    
+    def action_formulas(self, AST):
+        return islice(AST.conjuncts, 1, None)
+
+    
 
 # reusability of formulas generated at a state 
 class StateFormula:
@@ -205,16 +368,24 @@ class StateFormula:
     def store(self, depth, formula):
         self._by_depth[depth] = formula
 
-def ContextGenerator():
+class ContextGenerator:
     
     def __init__(self, model, KN_d):
         self.model = model
         self.extractor = Extractor()
-        self.context = KN_d
-        self.operators = {[]}
+        self.generator = Generator()
+        self.state_formula_mapping = {}
+        self.context_depth = KN_d
+        # basic primary objectives 
         self.objectives = {"goal": ["Goal", "GoalZone"], "explore": ["E_high", "E_mid"]}
+        
+        # primary things to avoid 
+        self.avoid = ["TS", "DangerZone"]
 
-    
+    def update_model(self, model):
+        self.extractor._extract_cache = {}
+        self.generator._formula_cache = {}
+        self.
 
     def gen_formula(state, objective):
 

@@ -4,7 +4,7 @@ import textwrap
 import random
 from graphviz import Digraph
 from tester_model import TesterModel
-from context_gen import Extractor 
+from context_gen import Extractor, Generator
 
 
 def visualize(model, title=None):
@@ -77,10 +77,22 @@ def main():
     # state = random.choice(tuple(model.states))
     # print(f"State: {state}")
 
-    # DAG of depth k 
+    # DAG of depth k
     k = 2
     prop_tree = extractor.extract_labels("s7", k)
     extractor.print_label_tree(prop_tree)
+
+    # generate formula bottom-up and print
+    generator = Generator(button_up=True)
+    formula = generator.generate_formula(prop_tree, k)
+    print("\nGenerated formula:")
+    print(repr(formula))
+    print(type(formula))
+    action_formulas = generator.action_formulas(formula)
+    print("\nAction formulas:")
+    print
+    for a_formula in action_formulas:
+        print(f"{a_formula.action}: {repr(a_formula)}")
 
 if __name__ == "__main__":
 

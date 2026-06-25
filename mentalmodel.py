@@ -3,6 +3,7 @@ import networkx as nx
 from graphviz import Digraph
 import matplotlib.pyplot as plt
 from bisim import BiSimMini
+from context_gen import ContextGenerator
 from itertools import chain
 import os, types, tempfile, textwrap
 from collections import defaultdict, deque
@@ -261,14 +262,18 @@ class CompressedModel:
         self.multi_edges = multi_edges
 
 
-class KripkeMM:
+class SymbolicMM:
     """
     Wrapper class that bring all of the components together 
     """
     def __init__(self, multi_edges=False, complex_labels=True,
-                  zones=None, zone_radious=None, **kwargs):
+                  zones=None, zone_radious=None, compressor=None, **kwargs):
         self.struct = ModelStructure(multi_edges=multi_edges, **kwargs)         # underlying structure 
-        self.compressor = BiSimMini(self.struct, multi_edges=multi_edges)       # compresion engine 
+        # set up compressor
+        if not compressor:
+            self.compressor = BiSimMini(self.struct, multi_edges=multi_edges)   
+        else:
+            self.compressor = compressor    
         self.contex_generator = None                                            # formula generator on basis of model
         self.abst = None
         
