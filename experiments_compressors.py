@@ -24,7 +24,7 @@ matplotlib.use("Agg")                       # never block; just write PNGs
 import matplotlib.pyplot as plt
 import numpy as np
 
-from mentalmodel import KripkeMM
+from mentalmodel import SymbolicMM
 from bisim_approx import ApproxBisim, SimQuotient
 from envirs import ToroidalGrid, RoomsGrid
 from playground import GridWorld
@@ -65,7 +65,7 @@ _COMPRESSORS = [k for k, *_ in SERIES if k != "struct"]
 def run_env(make_env):
     rng = np.random.default_rng(SEED)
     env = make_env()
-    model = KripkeMM(n_action=len(env.actions), labelling_function=env_labelling,
+    model = SymbolicMM(n_action=len(env.actions), labelling_function=env_labelling,
                      complex_labels=COMPLEX_LABELS, multi_edges=MULTI_EDGES)
 
     xaxis = []

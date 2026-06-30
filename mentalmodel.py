@@ -8,9 +8,8 @@ from itertools import chain
 import os, types, tempfile, textwrap
 from collections import defaultdict, deque
 
-
 class ModelStructure:
-    def __init__(self, n_action, labelling_function=None, multi_edges=False):
+    def __init__(self, labelling_function=None, multi_edges=False):
         """
         Arguments:
             - n_action := number of actions possible
@@ -24,7 +23,6 @@ class ModelStructure:
         self.init_setup_for_edges(multi_edges)
 
         # building attributes 
-        self.n_action = n_action
         self.multi_edges = multi_edges
 
         # if labelling function is give then use that instead of default
@@ -264,19 +262,26 @@ class CompressedModel:
 
 class SymbolicMM:
     """
-    Wrapper class that bring all of the components together 
+    Wrapper class that bring all of the components together for
+    the Symbolic Mental Model
     """
-    def __init__(self, multi_edges=False, complex_labels=True,
+    def __init__(self, num_act, multi_edges=False, complex_labels=True,
                   zones=None, zone_radious=None, compressor=None, **kwargs):
-        self.struct = ModelStructure(multi_edges=multi_edges, **kwargs)         # underlying structure 
+        
+        # underlying structure 
+        self.struct = ModelStructure(multi_edges=multi_edges, **kwargs) 
         # set up compressor
         if not compressor:
             self.compressor = BiSimMini(self.struct, multi_edges=multi_edges)   
         else:
-            self.compressor = compressor    
-        self.contex_generator = None                                            # formula generator on basis of model
-        self.abst = None
-        
+            self.compressor = compressor
+        # learned model                                          
+        self.abst = None  
+        # formula generator on basis of model
+        self.cgenerator = ContextGenerator(self)
+          
+        ## Symbolic Model Settings 
+        self.num_act = num_act
         self.complex_labels = complex_labels 
         # set zones depending on instantiation
         if zones is not None:
@@ -352,9 +357,8 @@ class SymbolicMM:
         # optimize to avoid lookups
         relations = model.relations
         labels = model.labels 
-        n_actions = self.struct.n_action
+        n_actions = self.num_act
         
-
         for s in relations.keys():
 
             s_labels = labels[s]
@@ -382,15 +386,6 @@ class SymbolicMM:
                     if zone not in labels[s]:
                         if self.within_radious_dfs(model, s, label, self.zone_radious):
                             model.labels[s].add(zone)                                              # learned compressed model 
-    
-    def one_step_props(self, state):
-        # get all the one step future proposition
-        future_props = []
-
-        for s_next in self.struct.relations[state]:
-            future_props.append(self.struct.labels[s_next])
-        
-        return future_props
   
     def visualize(self, model, title=None):
         """
@@ -493,10 +488,12 @@ class SymbolicMM:
         # populate model with complext labels
         if self.complex_labels:
             self.generate_labels()
+        
+        # clear caches for context generator 
+        self.cgenerator.update_and_clear_cache(self.abst)
 
 
-
-class KMMcompare(KripkeMM):
+class KMMcompare(SymbolicMM):
     """Current adjusted version to account for possible 4*4 comparion"""
 
     def __init__(self, compare_models, compare_struct, complex_labels=True, multi_edges=False, **kwargs):

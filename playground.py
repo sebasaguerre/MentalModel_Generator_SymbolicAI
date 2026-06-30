@@ -2,7 +2,7 @@ import time
 import math
 import numpy as np
 from rl_agent import XP_Replay 
-from mentalmodel import KripkeMM, KMMcompare
+from mentalmodel import SymbolicMM, KMMcompare
 
 class GridWorld:
     """Simple implementation of GridWorld for testing"""
@@ -331,12 +331,12 @@ def main():
             multi_edges = False
         
         # init model
-        model = KMMcompare(compare_models=compare_models, compare_struct=compare_struct, n_action=len(env.actions),
+        model = KMMcompare(compare_models=compare_models, compare_struct=compare_struct, num_act=len(env.actions),
                             complex_labels=complex_labels, multi_edges=multi_edges, zone_radious=zone_radious)
         # if compare:
         #     model = KMMcompare(n_action=len(env.actions), complex_labels=complex_labels, zone_radious=zone_radious)
         # else:
-        #     model = KripkeMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
+        #     model = SymbolicMM(n_action=len(env.actions), complex_labels=True, zone_radious=zone_radious)
 
         # run experiment 
         experiment(env, model, n, visualize=visualize, render=False, view_env=view_env, compare_models=compare_models,
@@ -345,9 +345,9 @@ def main():
     # basic simple testing 
     else:
 
-        model = KMMcompare(compare_models=False, compare_struct=False, n_action=len(env.actions), complex_labels=True, 
+        model = KMMcompare(compare_models=False, compare_struct=False, num_act=len(env.actions), complex_labels=True, 
                         multi_edges=True, zone_radious=None)
-        # model = KripkeMM(multi_edges=True, n_action=len(env.actions), 
+        # model = SymbolicMM(multi_edges=True, n_action=len(env.actions), 
         #                  complex_labels=True, zone_radious=None)
 
         experiment(env, model, 10, visualize=True, render=False, view_env=False,
