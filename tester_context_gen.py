@@ -78,7 +78,7 @@ def main():
     # print(f"State: {state}")
 
     # DAG of depth k
-    k = 2
+    k = 3
     prop_tree = extractor.extract_labels("s7", k)
     extractor.print_label_tree(prop_tree)
 
@@ -87,12 +87,15 @@ def main():
     formula = generator.generate_formula(prop_tree, k)
     print("\nGenerated formula:")
     print(repr(formula))
-    print(type(formula))
-    action_formulas = generator.action_formulas(formula)
+
+    action_formulas = list(generator.action_formulas(formula))
     print("\nAction formulas:")
-    print
     for a_formula in action_formulas:
         print(f"{a_formula.action}: {repr(a_formula)}")
+
+    print("\nAction formulas (by level):")
+    for a_formula in action_formulas:
+        print(f"{a_formula.action}: {generator.pretty_format(a_formula)}")
 
 if __name__ == "__main__":
 

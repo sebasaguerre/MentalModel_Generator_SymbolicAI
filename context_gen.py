@@ -103,6 +103,64 @@ class G:
         q = self.quant or '?'
         return f"{q} {subscript(self.action)}G{self.f}"
 
+# support class for formula update
+class UpdateContext:
+    "collect all the information needed to perform a formula update"
+    
+    def __init__(self, action, goal_props):
+        self.action = action
+        self.goal_props
+        self.goal_map = {elem: idx for idx, elem in enumerate(goal_props)}
+        # both collect the objective props for the designated states
+        self.child_props = list()           # list(set)   # NOTE:  this is done to also work with non-determinism 
+        self.nxt_props = list()             # list(set)   # NOTE: only contains ist argument props
+        self.nxt_ops = dict()               # (oper, quant, iter) = props 
+        self.update_props = set()
+        self.prev = False 
+
+    def get_update_info(self):
+        "Generate info needed for update"
+        #TODO: update to working with child_prop as a list
+
+        # compute existential values
+        self.exi_paths = [
+            self.child_props.intersection(nxt_prop)
+            for nxt_prop in self.nxt_props ]
+        self.exi_nxt = set.union(*self.nxt_props)
+
+        # compute operator options and qunt
+        self.op_options = set().intersection(
+                {self.update_options(nxt[0]) for nxt in self.nxt_ops.keys()}
+                )
+        self.merge_quant = "E" if any("E" in tpl for tpl in self.nxt_ops.keys()) else "A"
+
+        # compute univeral values only if universal formulas are possible
+        if self.merge_quant == "A":
+            self.uni_paths = set.intersection(*self.exi_paths) 
+            self.uni_nxt = set.intersection(*self.nxt_props)
+        else:
+            self.uni_paths = set()
+            self.uni_nxt = set()
+
+    def set_new_formula(self, props, operator, quant):
+        self.update_props.update(props)
+        self.new_operator = operator
+        self.new_quant = quant 
+    
+    def extend_previous_formula(self, props, operator, quant):
+        "Store formulas that could be extende and then compare with new formula"
+
+        if not self.prev:
+            self.prev = True 
+            self.extend_formulas = []
+            self.append((props, operator, quant))
+        
+        else:
+            self.append((props, operator, quant))
+
+    def get_new_formula(self):
+        pass
+
 ##### Label Extractor 
 class Extractor():
     def __init__(self, model):
@@ -279,6 +337,7 @@ class Generator:
         self._formula_cache = {}
 
         # self.sym_model = parent 
+        self.op_imporance = (G, U, X, F)
 
     def _generate_top_down(self, label_tree):
         pass
@@ -320,25 +379,25 @@ class Generator:
                         children[action].append(execute(succ_node, depth + 1))
                     
                 # bubble-up -> wrap kids in Next Wrapper
-                state_s_nodes = deque()                            # all syntactic nodes that belong to this state
+                state_action_nodes = deque()                            # all syntactic nodes that belong to this state
                 for action, s_nodes in children.items():
 
                     # nondeterministic transitions 
                     if len(s_nodes) > 1:
-                        s_node = X(OR(s_nodes), action, quant="A")
+                        action_node = X(OR(s_nodes), action, quant="A")
                     else:
-                        s_node = X(s_nodes[0], action, quant="A")
+                        action_node = X(s_nodes[0], action, quant="A")
                     
-                    state_s_nodes.append(s_node)
+                    state_action_nodes.append(action_node)
                 
                 # now that we iterated over all the succesors and added nXt, we get state props 
                 if len(node.props) > 1:
-                    state_s_nodes.appendleft(AND([Atom(p) for p in node.props]))
+                    state_action_nodes.appendleft(AND([Atom(p) for p in node.props]))
                 else:
-                    state_s_nodes.appendleft(Atom(next(iter(node.props))))
+                    state_action_nodes.appendleft(Atom(next(iter(node.props))))
                 
                 # now we create the parent node and return 
-                parent_s_node = AND(state_s_nodes)
+                parent_s_node = AND(state_action_nodes)
 
                 # # update parent node if depth is greater than 
                 # if formula_depth >= 2:
@@ -354,6 +413,85 @@ class Generator:
     
     def action_formulas(self, AST):
         return islice(AST.conjuncts, 1, None)
+
+    def _is_simple(self, node):
+        "True if node is an atom, or a conjunction/disjunction of only atoms (no temporal ops)"
+        if isinstance(node, Atom):
+            return True
+        if isinstance(node, (AND, OR)):
+            items = node.conjuncts if isinstance(node, AND) else node.disjuncts
+            return all(self._is_simple(item) for item in items)
+        return False
+
+    def _flat(self, node):
+        "Single-line rendering of a simple (temporal-op-free) node"
+        if isinstance(node, Atom):
+            return repr(node)
+        if isinstance(node, (AND, OR)):
+            is_and = isinstance(node, AND)
+            items = node.conjuncts if is_and else node.disjuncts
+            sym = "∧" if is_and else "∨"
+            return "( " + f" {sym} ".join(self._flat(item) for item in items) + " )"
+        return repr(node)
+
+    def _pretty_lines(self, node, indent, tab):
+        pad = tab * indent
+
+        if isinstance(node, Atom):
+            return [pad + repr(node)]
+
+        if isinstance(node, (AND, OR)):
+            if self._is_simple(node):
+                return [pad + self._flat(node)]
+
+            is_and = isinstance(node, AND)
+            items = node.conjuncts if is_and else node.disjuncts
+            sym = "∧" if is_and else "∨"
+            child_pad = tab * (indent + 1)
+
+            lines = [pad + "("]
+            for i, item in enumerate(items):
+                item_lines = self._pretty_lines(item, indent + 1, tab)
+                if i > 0:
+                    first = item_lines[0]
+                    stripped = first[len(child_pad):] if first.startswith(child_pad) else first.lstrip()
+                    item_lines[0] = f"{child_pad}{sym} {stripped}"
+                lines.extend(item_lines)
+            lines.append(pad + ")")
+            return lines
+
+        if isinstance(node, X):
+            q = node.quant or "?"
+            header = f"{pad}{q}X{subscript(node.action)}("
+            body = self._pretty_lines(node.f, indent + 1, tab)
+            return [header] + body + [pad + ")"]
+
+        if isinstance(node, U):
+            q = node.quant or "?"
+            header = f"{pad}{q}("
+            f_lines = self._pretty_lines(node.f, indent + 1, tab)
+            mid = f"{tab * (indent + 1)}{subscript(node.action)}U"
+            g_lines = self._pretty_lines(node.g, indent + 1, tab)
+            return [header] + f_lines + [mid] + g_lines + [pad + ")"]
+
+        if isinstance(node, F):
+            q = node.quant or "?"
+            header = f"{pad}{q}{subscript(node.action)}F("
+            body = self._pretty_lines(node.f, indent + 1, tab)
+            return [header] + body + [pad + ")"]
+
+        if isinstance(node, G):
+            q = node.quant or "?"
+            header = f"{pad}{q}{subscript(node.action)}G("
+            body = self._pretty_lines(node.f, indent + 1, tab)
+            return [header] + body + [pad + ")"]
+
+        # fallback for unknown node types
+        return [pad + repr(node)]
+
+    def pretty_format(self, node, indent=0, tab="    "):
+        "Render a formula AST indented level-by-level for readability"
+        return "\n".join(self._pretty_lines(node, indent, tab))
     
     def get_props(self, node):
         "Currently only implemented for conjunction"
@@ -362,13 +500,264 @@ class Generator:
 
         if isinstance(node, AND):
             return set(elem.prop for elem in node.conjuncts)
+        
+        elif isinstance(node, OR):
+
+            if any(isinstance(disjunt, AND) for disjunt in node.disjuncts):
+                disjoint_sets = set()
+                for disjunct in node.disjuncts:
+                    if isinstance(disjunct, AND):
+                        disjoint_sets.add(set(elem.prop for elem in disjunct.conjuncts))
+                    else:
+                        disjoint_sets.add(disjunct.prop)
+
         else:
             return set(node.prop)
         
     def decouple_state_formula(self, formula):
         return self.get_props(formula.conjuncts[0]), self.action_formulas(formula)
     
+    def wrap_elems(self, elements, conjunct=True):
+        if len(elements) > 1:
+            if conjunct:
+                return AND(elements)
+            else:
+                return OR(elements)
+        else:
+            return Atom(next(iter(elements)))
+    
+    def update_options(self, operator):
+        "Given a temporal operator which operators can we update to"
+
+        match operator:
+            case F(): 
+                return {F, X}
+            case G():
+                return {F, X, U, G}
+            case X():
+                return {F, X, U, G}
+            case U():
+                return {U, F, X}
+            
+    def get_highest_rank_set(self, update_ctx, list_of_sets):
+        """
+        Compare the rank of all sets according to the agents objectives.
+        Iteratively shrink the numbers of sets checkd by requiring them to be subsets
+        of the previously collected high ranking propositions. Props are stored in update_ctx
+        """
+        
+        while len(list_of_sets) > 0 :
+            # rank eack existenial path by other 
+            sets_by_rank = [
+                min([update_ctx.goal_map(prop) for prop in exi_path]) for exi_path in list_of_sets
+                ]
+            
+            # if more than one contain the same max gaol rank then store and iterate 
+            max_rank = min(sets_by_rank)
+            max_elem = update_ctx.goal_props[max_rank]
+            update_ctx.update_props.add(max_elem)
+
+            if sets_by_rank.count(max_elem) > 1:
+                list_of_sets = [(prop_set - {max_elem}) for prop_set in list_of_sets if max_elem in prop_set]
+            else:
+                return
+            
+    def existential(self, update_ctx, list_of_sets, operator, g_prop):
+        """
+        Check for existential update for a given operator.
+        Given a list of sets with path/state props, find the set containing g_prop that
+        has the higher rank, by checking the rank of the other propos and select that one. 
+        """
+
+        if not any(g_prop in prop_set for prop_set in list_of_sets ):
+            return False
+
+        # updated list of sets to search 
+        matched_sets = [prop_set - {g_prop} for prop_set in list_of_sets if g_prop in prop_set]
+
+        if len(matched_sets) > 1:
+            # break tie between matched sets 
+            update_ctx.update_props.add(g_prop)
+            self.get_hihgest_rank_set(update_ctx , matched_sets)
+            highest_ranking_set = next((prop_set for prop_set in list_of_sets
+                                            if update_ctx.update_props <= prop_set), None)
+            update_ctx.set_new_formula(highest_ranking_set, operator, "E")
+
+        else:
+            update_ctx.set_new_formula(matched_sets[0], operator, "E")
+        
+        return True 
+    
+    def universal(self, update_ctx, list_of_sets, operator, g_prop):
+        """
+        Check is univerdal formula update is possible for a given operator
+        """
+
+        if (update_ctx.merge_quant == "A") and (g_prop in update_ctx.list_of_sets):
+            update_ctx.set_new_formula(update_ctx.list_of_sets, operator, "A")
+            return True 
+
+    def check_update(self, operator, g_prop, update_ctx):
+        """
+        Given the update context, check if a goal propsition matches the
+        operators conditions. If condition is met, the operator is set and 
+        include the other goal propositions that the condition met.
+        """
+        
+        g_prop_rank = update_ctx.goal_map(g_prop)
+
+        match operator:
+            case G():
+                # Universal Global
+                if update_ctx.merge_quant == "A" and g_prop in update_ctx.uni_paths:
+                    update_ctx.set_new_formula(update_ctx.uni_paths, operator, "A")
+                    return True 
+                
+                # Existential Global
+                elif self.existential(update_ctx, update_ctx.exi_paths, operator, g_prop):
+                    return True
+
+                #NOTE: under revision after the function is fully implemented 
+                # # preserve nxt Global   
+                # elif G in update_ctx.nxt_ops.keys():
+                #     # evaluate if its worth keeping global 
+                #     global_props = [global_prop for key, global_prop in update_ctx.nxt_ops.items() if G in key]
+                #     global_props_rank = [min([update_ctx.goal_map(prop) for prop in global_set]) for global_set in global_props]
+                #     max_rank_global = min(global_props_rank)
+
+                #     if (max_rank_global < g_prop_rank) or abs(g_prop_rank - max_rank_global) < 2:
+                #         max_global_props = global_props[global_props_rank[max_rank_global]]
+                        
+                # No Global possible 
+                else:
+                    return False
+                    
+            case U():
+                if update_ctx.merge_quant == "A":
+                    pass
+                else: 
+                    pass
+    
+            case X():
+                # Universal Next - this only depends on whether non-deter. and prop valuation
+                if any(g_prop in child_prop for child_prop in update_ctx.child_props):
+
+                    # check non-determinism
+                    if len(update_ctx.child_prop) > 1:
+                        if all(g_prop in child_prop for child_prop in update_ctx.child_props):
+                            update_ctx.set_new_formula(set.intersection(*update_ctx.child_props), operator, "A")
+                            return True
+                        else:
+                            matched_sets = [child_set - {g_prop} for child_set in update_ctx.child_props if g_prop in child_set]
+
+
+                    else:
+                    # determinism, add all props 
+                        update_ctx.set_new_formula.update(update_ctx.child_props[0], operator, "A")
+                        return True
+                    
+                else:
+                    return False
+                
+            case F():
+                # Universal Eventually 
+                if self.universal(update_ctx, update_ctx.uni_nxt, operator, g_prop):
+                    return True 
+                
+                # Existential Eventually 
+                if self.existential(update_ctx, update_ctx.exi_nxt, operator, g_prop):
+                    return True
+                
+                else: 
+                    return False
+                
+    
+    def update_action_formula(self, update_ctx, goal_props):
+        "Iterative checking formula update for the most meaningul update"
+
+        # goal proposition in order of relevance 
+        for g_prop in goal_props:
+
+            # skip g_props not present 
+            if not ((g_prop in update_ctx.exi_nxt) or (g_prop in update_ctx.child_props)):
+                continue
+
+            # iterate over possible oprators in order of importance
+            for operator in self.op_imporance:
+
+                if not (operator in update_ctx.op_options):
+                    continue 
+
+                # check if operator fits 
+                if self.check_update(operator, update_ctx, g_prop):
+                    return 
+
+    
     def update_formulas(self, formula, goals, ignore=set()):
+        """
+        Refine formulas for more expresivity and taylor to objective
+        """
+        #NOTE: for later: consider the possibility to also track rank 1 goals for U & G
+        #NOTE: this does not consider non-determinisitic systems: take care later
+
+        # deconstruct parent fomrula: state prop + action formulas
+        parent_props, action_formulas = self.decouple_state_formula(formula)
+        updated_formula = deque()
+        goal_props = tuple(rank_prop for rank_props in goals.values() for rank_prop in rank_props)
+
+        # update action formulas
+        for _ , af in enumerate(action_formulas):
+
+            # get formula details
+            temp_operat = type(af)
+            action = af.action
+            quant = af.quant
+            child_props, nxt_formulas = self.decouple_state_formula(af.f)
+
+            # track all info needed for update 
+            update_ctx = UpdateContext(action, goal_props)
+            
+            # storen props in objective. NOTE 
+            update_ctx.child_props.append(self.get_props(child_props).intersection(goal_props))
+
+            # collect the operators that the child successors have for formula update
+            nxt_ops = dict()
+    
+            # iterate over temporal subformulas: successors of child
+            for i, nxt_elem in enumerate(nxt_formulas):
+
+                # nxt fromula relevant details
+                nxt_quant = nxt_elem.quant
+
+                # extract props if existing
+                nxt_obj_props = self.get_props(nxt_elem.f).intersection(goal_props) 
+                update_ctx.nxt_props.append(nxt_obj_props)  
+
+                #TODO: incorporate a way to save U as a special case
+                if isinstance(nxt_elem, U):
+                    until_props = self.get_props(nxt_elem.g).intersection(goal_props)
+                    nxt_obj_props = (nxt_obj_props, until_props)
+
+                # store operators, props and quant
+                update_ctx.nxt_ops[(nxt_elem, nxt_quant, i)] =  nxt_obj_props
+
+            #### Action formula Update ####
+
+            # compute all the information needed to procced with an update
+            update_ctx.get_update_info()
+
+            # update action formula
+            updated_formula.append(
+                self.update_action_formula(update_ctx, goal_props)
+                )
+
+        # prepend state props to new formula then return ocnjunction
+        updated_formula.appendleft(formula.conjuncts[0])
+
+        return AND(updated_formula)
+
+
+    def old_update_formulas(self, formula, goals, ignore=set()):
         """
         Refine formulas for more expresivity and taylor to objective
         """
@@ -377,7 +766,8 @@ class Generator:
         updated_formula = deque()
 
         # update action formulas
-        for i, af in enumerate(action_formulas):
+        for _ , af in enumerate(action_formulas):
+
             # get formula details
             temp_operat = type(af)
             action = af.action
@@ -392,75 +782,117 @@ class Generator:
             #     updated_formula.append(X(child_props - ignore, action, quant))
             #     continue
 
+            #NOTE: for later: consider the possibility to also track rank 1 goals for U & G
+            #NOTE: this does not consider non-determinisitic systems: take care later 
+
+
+
+            #NOTE: this avoids completley the storage of objectives for a branch -> simplify + simpler
+            # but reducess expressivity 
+
             # check if next prop are in objective, if primary => nXt, else store
             for rank, objectives in goals.items():
-                if child_props in objectives:
-                    child_obj_props = set(prop for prop in child_props if prop in objectives)
-                    # if rank 1 objectives then update immediately 
-                    if rank == 1:
-                        updated_formula.append(X(self.wrap_props(child_obj_props), action, quant))
-                    else:
-                        obj_props["child"][rank].append(child_obj_props)
-                
+                child_obj_props = set(prop for prop in child_props if prop in objectives)
+                # if rank 1 objectives then update immediately 
+                if child_obj_props and rank == 1:
+                    updated_formula.append(X(self.wrap_elems(child_obj_props), action, quant))
+                    # if immediate update (?)
+                    continue 
+                else:
+                    obj_props["child"][rank].append(child_obj_props)
+            
             
             # check for prop equiavalence in trajectory and remove irrelevant props 
             match_child = set(prop for prop in child_props if prop in parent_props) - ignore 
-            match_nxt = defaultdict(list)
+            match_nxt = []
 
-            # iterate over function terms
+            # iterate over temporal subformulas: successors of child
             for nxt_elem in nxt_formulas:
+
                 # nxt fromula relevant details
                 nxt_operator = type(nxt_elem)
                 nxt_quant = nxt_elem.quant
-                
+
+                # NOTE: this might not be useful, possibly eliminate 
                 # chekc dim of temporal fomula 
                 if not (until := isinstance(nxt_elem, U)):
                     props = (self.get_props(nxt_elem.f), )
                 else:
                     props = (self.get_props(nxt_elem.f), self.get(nxt_elem.g))
 
+
                 # check if props in trajectory are part of objective (per rank)
                 for rank, objectives in goals.items():
-                    if props[1] in objectives:
-                        nxt_obj_props = set(prop for prop in props[1] if prop in objectives)
-                        obj_props["nxt"][rank].append(set(prop for prop in props[1] if prop in objectives))
+                    nxt_obj_props = set(prop for prop in props[1] if prop in objectives)
+                    obj_props["nxt"][rank].append(nxt_obj_props)
+                    # if props[1] in objectives:
+                    #     nxt_obj_props = set(prop for prop in props[1] if prop in objectives)    
 
-                # if child to parent matching, check matching with next
+                # if child to parent matching, check matching with next. This is for G
                 if match_child:
-                    match_nxt["full"].append([prop for prop in props[1] if prop in match_child])
+                    match_nxt.append(set(prop for prop in props[1] if prop in match_child))
             
-            #### action formula update ####
+            #### Action formula Update ####
+            # checking formulas in order of relevance
 
-            # check match_child for Until or Global formula 
-            if match_child:
-                # check for match_child for Global formula
-                if match_nxt["full"]:
-                    
-                    if len(global_path_props:= set.intersection(*match_nxt)) == 0:
+            # intersection of paths per rank for all nxt paths 
+            exi_paths = {
+                        rank: [
+                            set.intersection(parent_props, *obj_props["child"][rank], path_set)
+                            for path_set in obj_props["nxt"][rank]
+                        ]
+                        for rank in obj_props["nxt"].keys()
+                        }
+            
+            # set of objc props that are true across all paths after action was taken 
+            uni_paths = {rank: set.intersection(*exi_paths[rank]) for rank in exi_paths}
 
-                    # quantifier attribution
-                    if len(match_nxt["full"]) == len(nxt_formulas):
+   
+            # check for AG
+            if uni_paths:
+                updated_formula.append(G(self.wrap_elems(uni_paths), action, quant="A"))
+                continue
+            
+            # parent to child path intersection and nxt goal props that hold in all nxt
+            child_uni_paths = set.intersection(parent_props, *obj_props["child"])
+            uni_nxt_props = set.intesection(*obj_props["nxt"].values())           # box phi 
 
-                        updated_formula.append(G(self.wrap_props(match_child), action=action, quant="A"))
-                    else:
-                        updated_formula.append(G(self.wrap_props(match_child), action=action, quant="E"))
-                    continue
+            # checking for AU
+            if child_uni_paths & uni_nxt_props: 
+                updated_formula.append(U(self.wrap_elems(child_uni_paths),
+                                         self.wrap_elems(uni_nxt_props), action, quant="A"))
+                continue 
+            
+           # check for AX
+            for rank_props in obj_props["child"].items():
+                if rank_props:
+                    updated_formula.append(X(self.wrap_elems(rank_props), action, quant="A"))
 
-            # check for other operators based on objectives 
-            for rank, props in obj_props:
-                # check if props of current rank have been found 
-                if props:
-                    unique_props = set.union(*props)
-                    shared_props = set.intersection(*props)
+            # existing variables per rank in nxt successors 
+            nxt_exi_props = {rank : set.union(*obj_props["nxt"][rank]) for rank in obj_props["nxt"].keys()}
 
-                    # check for quantifiers 
-                    if len(props) == len(nxt_formulas):
-                        updated_formula.append(F(self.wrap_props(shared_props), action=action, quant="A"))
-                    else:
-                        updated_formula.append(F(self.wrap_props(shared_props), action=action, quant="E"))
-                    continue
+            # check for EG and EU: heuristic based for ranks
+            for rank, prop_list in exi_paths.items():
+                if rank_exi_path := [props for props in prop_list if props]:
+                    updated_formula.append(G(self.wrap_elems(rank_exi_path[0], conjunct=False),
+                                            action, quant="A"))
+                    continue 
+                elif child_uni_paths & nxt_exi_props[rank]:
+                    updated_formula.append(U(self.wrap_elems(child_uni_paths),
+                                             self.wrap_elems(next(iter(nxt_exi_props[rank]))),
+                                             action, quant="E"))
 
+            # check for AF
+            if uni_nxt_props:
+                updated_formula.append(F(self.wrap_elems(uni_nxt_props), action, quant="A"))
+                continue
 
+            # check for EF 
+            for rank, prop_list in obj_props["nxt"].items():
+                    if exi_props := [props for props in prop_list if props]:
+                        updated_formula.append(F(self.wrap_elems(exi_props[0]),
+                                                action, quant="E"))
+                        continue 
 
 
         # prepend state props to new formula then return ocnjunction
@@ -468,16 +900,6 @@ class Generator:
 
         return AND(updated_formula)
     
-    def wrap_props(self, props, conjunct=True):
-        if len(props) > 1:
-            if conjunct:
-                return AND(props)
-            else:
-                return OR(props)
-        else:
-            return Atom(props)
-        
-
 
 # reusability of formulas generated at a state 
 class StateFormula:

@@ -496,8 +496,8 @@ class SymbolicMM:
 class KMMcompare(SymbolicMM):
     """Current adjusted version to account for possible 4*4 comparion"""
 
-    def __init__(self, compare_models, compare_struct, complex_labels=True, multi_edges=False, **kwargs):
-        super().__init__(complex_labels=complex_labels, multi_edges=multi_edges, **kwargs)
+    def __init__(self, num_act, compare_models, compare_struct, complex_labels=True, multi_edges=False, **kwargs):
+        super().__init__(num_act, complex_labels=complex_labels, multi_edges=multi_edges, **kwargs)
         # init abst_k
         self.abst_k = None
         # self.complex_labels = kwargs.get("complex_labels")

@@ -1,0 +1,124 @@
+fi := future implementation 
+
+conditional update of formulas:
+
+# nXt is the building block of formulas, it can morph into any other operator
+this also means that all others can be trnasformed back into nXt
+
+# this is the first meaningful update possible after depth >= 2
+X -> {F | G | U | X}
+
+    X -> F => no relevant path but important prop(s) at the end 
+    X -> G => the entire path contains important prop(s)
+    X -> U => the path contains important prop(s) along the way but also at its end points
+    X -> X => immediate next prop(s) is more important than future props 
+
+# eFventually 
+F ->  {F | X}
+
+    F -> F => consequent is/are important and nothing along the path is of grater relevance
+    F -> X => parent prop(s) is/are more important than consequent 
+
+# Global can **possibly** be updated to any, the caviar is that there will be loss of info
+G -> {F | X | U | G}
+
+    G -> G => path prop(s) match, thus we keep the same formula 
+    G -> F => path prop(s) fails, consequent is imoprtant and parent prop(s) is/are irrelevant
+        fi -> FGp 
+    G -> X => path prop(s) fails and parent prop(s) is/are more important 
+    G -> U => path prop(s) fails but parent prop(s) is/are also important 
+        fi -> p U Gq 
+
+# Until, updates are restrictive, or we loose info
+U -> {U | F | X}
+    
+    U -> U => antecedent matches, thus we can keep the same formula
+    U -> X => antecedent path fails and parent prop(s) is/are important 
+    U -> F => antecedent path fails but consequent is/are imortant 
+
+
+Quantifier updates:
+
+# Universal (for all)
+A -> {A | E}
+
+    A -> A => all subformulas are universal and they all satisfy the path requirements 
+
+        e.g: AX0( (p & q) & AG1(q) & Ap2Uq & AX3q) -> [0] A(pUq)
+            path quantifiers and path requirements satisfied
+
+    A -> E => at least one path from the parent satisfies the path formula and has existential quant
+
+        e.g: AX0( (p & q) & EG1(q) & Ap2Uq & AX3q) -> [0] E(pUq) {-/>  [0] A(pUq)}
+            miss match in successor(s) path quantifiers 
+        e.g: AX0( (p & q) & AF1(q) & Ap2Uq & AX3q) -> [0] E(pUq) {-/>  [0] A(pUq)}
+            successor dosnt satisfy path requiremnts  
+
+# Existential (there exists)
+E -> {E | A}
+
+    E -> E => default: all quants
+
+        e.g: EX0( q & AFr & EXp) -> 
+
+
+    E -> A => all successors contain the same prop(s)
+
+    AX_a(p & EF_1(q) & AG_2(q) & AX_3(q)) -> 
+
+
+
+# Dummy example 
+
+    obj.: r:= goal;  ¬(d:= death); l:= subgoal
+    states = {x, z1, z2, y, w, n, m, v1, v2}
+
+x: {p, q}   -{1}-> z1:{p}
+                    -{1}-> n:{r}
+                    -{2}-> m:{d}
+
+            -{1}-> z2:{l}
+                    -{3}-> n:{r}
+                    -{2}-> v1:{d}
+                    -{2}-> v2:{p}
+
+            -{2}-> y:{r}
+                    -{None}->
+
+            -{3}-> w:{l}
+                    -{1}-> v2:{p}
+                    -{2}-> n:{r}
+                    -{2}-> m:{d}
+
+action formulas:
+
+1.1:      AX_1 [( p & AX_1(r) & AX_2(d) )  | ( l & AX_3(r) & AX_2(d | p) )]    
+        # parent argument has disjuntion
+        # "clear" splitting of path outcomes => easy to check for this 
+
+        Update:
+
+
+ or 1.2: EX_1 [( p & AX_1(r) & AX_2(d) )] & EX_1 [( l & AX_3(r) & AX_2(d | p) )]
+        # explicit about non-determ. transition 
+        # more expressive 
+        # harder to update, parse, and mantain "fixed" structure  
+
+        Update:
+
+ or 1.3: AX_1 [( p | q ) & ((AX_1(r) & AX_2(d)) | (AX_3(r) & AX_2(d | p)))]
+        # keeps original structure of utilizing conjunction as connective 
+        # need to deal with nested disjunction 
+
+        Update: 
+
+ or 1.4: EX_1 [( p & AX_1(r) & AX_2(d) )  | ( l & AX_3(r) & AX_2(d | p) )] 
+        # unsure about what this means... all executions of a1 make this true...
+        
+
+
+
+# To ask:
+
+    - how does dijustion behave in path formulas? 
+    - how do the two action formulas {a1} differ? 
